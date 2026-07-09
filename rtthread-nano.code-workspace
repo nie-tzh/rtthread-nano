@@ -1,0 +1,21 @@
+﻿{
+  "folders": [
+    {
+      "name": "rtthread-nano",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "search.exclude": {
+      "**/rt-thread/libcpu/arm/**": true,
+      "**/rt-thread/libcpu/aarch64/**": true,
+      "**/rt-thread/bsp/stm32f407-msh/**": true
+    },
+    "files.exclude": {
+      "**/rt-thread/bsp/stm32f407-msh": true
+    },
+    "files.watcherExclude": {
+      "**/rt-thread/bsp/stm32f407-msh/**": true
+    }
+  }
+}
