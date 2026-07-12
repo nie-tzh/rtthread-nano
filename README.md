@@ -2,7 +2,13 @@
 
 本工程用于在采用玄铁E902 CPU核的T22解串器EVB上移植和运行RT-Thread Nano。
 
-当前已完成最小Makefile编译系统，后续将在此基础上完成E902 CPU移植、板级初始化、驱动适配和RT-Thread内核集成。
+当前已完成目标硬件和工具链确认、最小Makefile编译系统、裸机启动验证、T22解串器EVB板级初始化以及DW APB UART早期轮询输出。固件已完成上板验证，串口可以输出：
+
+```text
+T22 deserializer EVB booting...
+```
+
+下一阶段将依次建立E902异常入口、CLIC中断机制和DW Timer周期中断，再实现线程上下文切换并接入RT-Thread Nano内核。DW Timer将作为RT-Thread系统Tick来源，不使用E902 Core Timer。
 
 默认构建目标由板卡配置自动绑定为：
 
@@ -41,4 +47,7 @@ build/t22-deserializer-evb/demo/debug/
 
 其中包含`firmware.elf`、`firmware.bin`、`firmware.map`和`firmware.lst`。
 
-工程目录职责和扩展原则见[架构说明](docs/architecture.md)。
+相关文档：
+
+- [工程架构](docs/architecture.md)
+- [移植进度](docs/porting-progress.md)
