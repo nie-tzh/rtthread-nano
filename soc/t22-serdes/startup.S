@@ -11,6 +11,12 @@ _start:
 
     la      sp, __stack_top
 
+    csrci   mstatus, 8
+
+    la      t0, e902_exception_entry
+    ori     t0, t0, 3
+    csrw    mtvec, t0
+
     la      t0, __data_load_start
     la      t1, __data_start
     la      t2, __data_end

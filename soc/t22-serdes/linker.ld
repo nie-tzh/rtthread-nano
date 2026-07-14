@@ -16,6 +16,8 @@ SECTIONS
     {
         . = ALIGN(4);
         KEEP(*(.text.init))
+        . = ALIGN(64);
+        KEEP(*(.text.exception))
         *(.text .text.*)
         . = ALIGN(4);
         __text_end = .;
@@ -72,4 +74,6 @@ SECTIONS
     ASSERT(__heap_start <= __stack_limit, "RAM overflow: data/heap overlaps stack")
     ASSERT(__stack_top == __config_start, "RAM/config boundary mismatch")
     ASSERT(SIZEOF(.config) <= LENGTH(CONFIG), "Configuration area overflow")
+    ASSERT((e902_exception_entry & 0x3F) == 0,
+           "E902 exception entry must be 64-byte aligned")
 }

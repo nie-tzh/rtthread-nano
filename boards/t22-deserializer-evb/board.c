@@ -1,5 +1,6 @@
 #include "board.h"
 #include "dw_apb_uart.h"
+#include "e902_exception.h"
 #include "t22_serdes.h"
 
 #define BOARD_UART_BAUD_RATE     115200U
@@ -22,6 +23,7 @@ static void board_early_uart_init(void)
 
     board_uart_ready =
         (dw_apb_uart_init(&board_uart, &board_uart_config) == DW_APB_UART_OK);
+    e902_exception_set_output_ready(board_uart_ready);
 }
 
 void board_init(void)
@@ -70,4 +72,12 @@ int board_early_puts(const char *text)
     }
 
     return DW_APB_UART_OK;
+}
+
+void e902_exception_putchar(char ch)
+{
+    if (board_early_putc(ch) != DW_APB_UART_OK)
+    {
+        e902_exception_set_output_ready(0);
+    }
 }

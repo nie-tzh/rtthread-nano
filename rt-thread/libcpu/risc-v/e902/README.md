@@ -1,13 +1,15 @@
 # E902 CPU移植
 
-该目录对应RT-Thread的E902架构移植，后续包含：
+该目录对应RT-Thread的E902架构移植。当前已建立同步异常入口和现场诊断：
 
 ```text
-cpuport.c          中断控制和初始线程栈
-context_gcc.S      线程上下文切换
-interrupt_gcc.S    异常和中断入口
-cpuport.h          CPU相关定义
+cpu.mk                   CPU层构建入口
+exception_gcc.S          RV32E异常现场保存、恢复和mret
+exception.c              异常分类、现场记录和早期诊断输出
+include/e902_exception.h 汇编与C共享的异常帧布局
 ```
+
+CLIC中断入口、线程初始栈和上下文切换将在后续阶段继续加入。
 
 这里只放置CPU、RISC-V CSR、RV32E ABI、异常入口、CLIC核心机制和线程上下文相关内容。
 

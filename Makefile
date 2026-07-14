@@ -74,6 +74,15 @@ endif
 
 CPU := $(SOC_CPU)
 
+CPU_DIR := rt-thread/libcpu/risc-v/$(CPU)
+CPU_MK  := $(CPU_DIR)/cpu.mk
+
+ifeq ($(wildcard $(CPU_MK)),)
+$(error Unsupported CPU port: $(CPU))
+endif
+
+include $(CPU_MK)
+
 ifneq ($(strip $(DRIVER_MKS)),)
 include $(DRIVER_MKS)
 endif
