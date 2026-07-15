@@ -1,5 +1,10 @@
 #include "e902_exception.h"
 
+#if defined(CONFIG_E902_EXCEPTION_SELF_TEST)
+#define E902_C_EBREAK_ENCODING  0x00009002U
+#define E902_EBREAK_ENCODING    0x00100073U
+#endif
+
 volatile struct e902_exception_frame g_e902_last_exception;
 volatile uint32_t g_e902_exception_count;
 volatile uint32_t g_e902_exception_active;
@@ -96,8 +101,47 @@ static void exception_report(const struct e902_exception_frame *frame)
     exception_putc('\n');
 }
 
+#if defined(CONFIG_E902_EXCEPTION_SELF_TEST)
+static uint32_t breakpoint_instruction_length(uint32_t address)
+{
+    const volatile uint16_t *instruction =
+        (const volatile uint16_t *)(uintptr_t)address;
+    uint32_t low_halfword;
+    uint32_t encoding;
+
+    if ((address & 1U) != 0U)
+    {
+        return 0U;
+    }
+
+    low_halfword = instruction[0];
+    if (low_halfword == E902_C_EBREAK_ENCODING)
+    {
+        return 2U;
+    }
+
+    if ((low_halfword & 0x3U) != 0x3U)
+    {
+        return 0U;
+    }
+
+    encoding = low_halfword | ((uint32_t)instruction[1] << 16);
+    if (encoding == E902_EBREAK_ENCODING)
+    {
+        return 4U;
+    }
+
+    return 0U;
+}
+#endif
+
 uint32_t e902_exception_dispatch(struct e902_exception_frame *frame)
 {
+    uint32_t exception_code;
+#if defined(CONFIG_E902_EXCEPTION_SELF_TEST)
+    uint32_t instruction_length;
+#endif
+
     if (g_e902_exception_active != 0U)
     {
         g_e902_exception_count++;
@@ -117,6 +161,25 @@ uint32_t e902_exception_dispatch(struct e902_exception_frame *frame)
         g_e902_exception_halted = 1U;
         return 0U;
     }
+
+    exception_code = frame->mcause & E902_MCAUSE_CODE_MASK;
+#if defined(CONFIG_E902_EXCEPTION_SELF_TEST)
+    if (exception_code == E902_EXCEPTION_BREAKPOINT)
+    {
+        instruction_length = breakpoint_instruction_length(frame->mepc);
+        if (instruction_length != 0U)
+        {
+            frame->mepc += instruction_length;
+            exception_puts("action=resume reason=ebreak next_mepc=");
+            exception_put_hex32(frame->mepc);
+            exception_putc('\n');
+            g_e902_exception_active = 0U;
+            return 1U;
+        }
+    }
+#else
+    (void)exception_code;
+#endif
 
     exception_puts("action=halt reason=unrecoverable-exception\n");
     g_e902_exception_halted = 1U;

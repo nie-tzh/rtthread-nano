@@ -1,0 +1,109 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "E902 demo | CKLink",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/t22-deserializer-evb/demo/debug/firmware.elf",
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": true,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "riscv64-unknown-elf-gdb.exe",
+            "setupCommands": [
+                {
+                    "description": "Disable GDB pagination",
+                    "text": "set pagination off",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set remote timeout",
+                    "text": "set remotetimeout 20",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Map WSL source paths to Windows",
+                    "text": "set substitute-path /mnt/e/Kniulink/01_Project E:/Kniulink/01_Project",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Set GDB working directory",
+                    "text": "cd ${workspaceFolder}",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Connect to XuanTie DebugServer",
+                    "text": "target remote localhost:1025",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Keep software ebreak under debugger control",
+                    "text": "monitor set resume-bkpt-exception off",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Write firmware image to T22 ROM",
+                    "text": "restore ${workspaceFolder}/build/t22-deserializer-evb/demo/debug/firmware.bin binary 0x00140000",
+                    "ignoreFailures": false
+                }
+            ]
+        },
+        {
+            "name": "E902 exception test | CKLink",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/t22-deserializer-evb/e902-exception-test/debug/firmware.elf",
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "riscv64-unknown-elf-gdb.exe",
+            "miDebuggerServerAddress": "localhost:1025",
+            "launchCompleteCommand": "exec-continue",
+            "hardwareBreakpoints": {
+                "require": true,
+                "limit": 5
+            },
+            "setupCommands": [
+                {
+                    "description": "Disable GDB pagination",
+                    "text": "set pagination off",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set remote timeout",
+                    "text": "set remotetimeout 20",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Map WSL source paths to Windows",
+                    "text": "set substitute-path /mnt/e/Kniulink/01_Project E:/Kniulink/01_Project",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Set GDB working directory",
+                    "text": "cd ${workspaceFolder}",
+                    "ignoreFailures": false
+                }
+            ],
+            "postRemoteConnectCommands": [
+                {
+                    "description": "Reset and halt the target before loading the test image",
+                    "text": "monitor reset halt",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Write exception-test image to T22 ROM",
+                    "text": "restore ${workspaceFolder}/build/t22-deserializer-evb/e902-exception-test/debug/firmware.bin binary 0x00140000",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Route the test ebreak to the M-mode breakpoint exception",
+                    "text": "monitor set resume-bkpt-exception on",
+                    "ignoreFailures": false
+                }
+            ]
+        }
+    ]
+}
