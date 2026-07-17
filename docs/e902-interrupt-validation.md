@@ -1,15 +1,15 @@
-# E902异常与现场验证
+# E902异常与CLIC验证
 
-本文记录T22 E902异常入口的验证方法、构建方式、预期结果和失败分析。它与[《E902异常与CLIC中断架构》](e902-interrupt-architecture.md)分工如下：
+本文记录T22 E902同步异常入口和CLIC软件中断的验证方法、构建方式、预期结果和失败分析。它与[《E902异常与CLIC中断架构》](e902-interrupt-architecture.md)分工如下：
 
 - 架构文档解释硬件机制、寄存器关系、现场边界和默认异常策略。
-- 本文解释如何通过受控测试证明异常入口和现场恢复实现正确。
+- 本文解释如何通过独立、受控的测试应用证明异常和中断路径实现正确。
 
-测试代码通过独立的`e902-exception-test`应用显式启用，默认Debug和Release固件不执行主动异常测试。
+异常和CLIC测试分别通过独立的`e902-exception-test`和`e902-clic-test`应用显式启用，普通`demo`固件不执行主动异常或软件中断测试。
 
-## 1. 验证范围
+## 1. 异常验证范围
 
-当前验证覆盖以下内容：
+异常自测覆盖以下内容：
 
 | 验证项 | 目标 |
 | --- | --- |
@@ -232,14 +232,135 @@ E902 exception self-test: PASS
 | 断点长度识别和恢复策略 | `rt-thread/libcpu/risc-v/e902/exception.c` |
 | 异常现场入口和`mret` | `rt-thread/libcpu/risc-v/e902/exception_gcc.S` |
 
-## 9. 后续验证
+## 9. CLIC软件中断验证
+
+### 9.1 验证范围与当前状态
+
+CLIC自测用于验证从控制器初始化到`mret`返回主程序的最小异步中断闭环：
+
+| 验证项 | 目标 |
+| --- | --- |
+| 硬件发现 | 读取`CLICINFO`，校验中断数量和E902支持的2至5个控制位 |
+| 全局初始化 | 在`mstatus.MIE=0`时禁用全部硬件IRQ，配置并回读`CLICCFG.nlbits`和`MINTTHRESH` |
+| 硬件向量表 | `mtvt`指向64字节对齐、包含80项的T22向量表，写入后回读一致 |
+| IRQ注册 | IRQ 3配置为`shv=1`、正边沿触发，安装处理函数和参数后才允许单路使能 |
+| 公共入口 | 保存RV32E `x1-x15`和必要CSR，通过`mcause`分发处理函数 |
+| pending生命周期 | 全局中断关闭时置位并读回IP；硬件接受向量中断后观察自动清除，再由ISR显式清除 |
+| 返回路径 | `mcause.Interrupt=1`且中断号为3，ISR只执行一次，并通过`mret`返回主程序 |
+| 测试隔离 | CLIC测试只存在于独立应用，不改变普通`demo`的运行流程 |
+
+当前代码实现、Debug和Release构建、ELF布局、反汇编检查及T22目标板运行均已完成。目标板读取`CLICINFO=0x00600050`，IRQ 3软件中断自测最终输出`PASS`。
+
+### 9.2 构建与运行
+
+使用独立应用和独立输出目录构建：
+
+```sh
+make BOARD=t22-deserializer-evb APP=e902-clic-test BUILD=debug \
+     O=build/t22-deserializer-evb/e902-clic-test/debug
+```
+
+直接运行时，将该目录下的`firmware.bin`下载到`0x00140000`并复位，观察UART日志。
+
+使用CKLink时，启动XuanTie DebugServer，在VS Code中选择`E902 CLIC test | CKLink`。该配置会复位并暂停目标、下载CLIC测试固件、执行以下命令后自动继续：
+
+```gdb
+monitor set resume-bkpt-exception off
+```
+
+CLIC测试不主动执行`ebreak`，因此保留调试器对软件断点的正常接管行为。该配置只负责下载和调试，不触发WSL编译。
+
+### 9.3 测试流程
+
+1. 启动代码保持`mstatus.MIE=0`，完成`.data`、`.bss`和板级UART初始化。
+2. `t22_serdes_irq_init()`确认80项向量表大小，并调用E902通用CLIC初始化。
+3. 初始化代码读取`CLICINFO`，拒绝非法中断数量或控制位数，并禁用所有已实现IRQ。
+4. 写入并回读`mtvt`，令`nlbits=CLICINTCTLBITS`、`MINTTHRESH.mth=0`，随后回读配置。
+5. SoC层确认硬件中断数量能够覆盖T22最高IRQ 70。
+6. IRQ 3以`shv=1`、正边沿和最高可实现控制编码注册；注册过程保持全局中断原状态，且注册后单路仍关闭。
+7. 清除IRQ 3 pending，打开`CLICINTIE[3]`，此时全局`mstatus.MIE`仍为0。
+8. 软件写`CLICINTIP[3]=1`并读回1，证明请求已锁存但尚未进入ISR。
+9. 最后打开`mstatus.MIE`，E902通过`mtvt[3]`进入公共中断入口。
+10. 公共入口保存现场，`e902_irq_dispatch()`按`mcause`中的IRQ号调用已注册处理函数。
+11. 正边沿且`shv=1`的pending在硬件接受中断时应自动清零；ISR记录该状态，再显式清零并复查。
+12. 入口恢复`mcause`、`mstatus`、`mepc`和GPR，通过`mret`返回；主程序关闭全局和单路中断后统一判定结果。
+
+测试采用单层中断，ISR内不重新打开`mstatus.MIE`，本阶段不验证中断嵌套和RT-Thread中断嵌套计数。
+
+### 9.4 实测日志与通过结果
+
+T22解串器EVB实际输出：
+
+```text
+T22 deserializer EVB booting...
+E902 CLIC self-test: init
+E902 CLIC self-test: CLICINFO=0x00600050 irq_count=0x00000050 ctlbits=0x00000003
+E902 CLIC self-test: trigger IRQ 3
+E902 CLIC self-test: handled IRQ 3
+E902 CLIC self-test: PASS
+```
+
+实测值可解析为：
+
+```text
+CLICINFO.num_interrupt  = 0x50 = 80
+CLICINFO.CLICINTCTLBITS = 3
+CLICINTCTL有效位        = bit[7:5]
+CLICCFG.nlbits          = 3
+独立priority位          = 0
+```
+
+测试程序只有在以下条件全部满足时才会输出`PASS`：
+
+- IRQ处理函数只执行一次，接收到的IRQ号和`mcause.ExceptionCode`均为3。
+- `mcause.Interrupt`为1，注册参数保持正确。
+- 打开全局中断前pending为1，进入ISR后pending为0，显式清除后仍为0。
+- 公共分发计数为1、最后IRQ为3、未处理IRQ计数为0。
+- `mret`返回主程序，测试最终输出`PASS`。
+
+当前日志证明IRQ 3已从pending状态经过CLIC仲裁、`mtvt[3]`公共入口、C处理函数和现场恢复完整返回主程序，第5阶段CLIC软件中断验收完成。
+
+### 9.5 失败码与排查入口
+
+失败日志格式为：
+
+```text
+E902 CLIC self-test: FAIL result=0x........ init=0x........
+```
+
+`init`保留`t22_serdes_irq_init()`的底层返回值；初始化成功时为0。`result`含义如下：
+
+| `result` | 失败位置 | 优先检查项 |
+| --- | --- | --- |
+| 1 | CLIC/SoC初始化 | `CLICINFO`、控制位范围、`mtvt`回读、`CLICCFG/MINTTHRESH`回读、硬件IRQ覆盖范围 |
+| 2 | 初始化后信息不一致 | 信息指针、IRQ数量、80项向量容量和控制位数 |
+| 3 | IRQ 3注册失败 | IRQ边界、处理函数、触发类型和初始化状态 |
+| 4 | 初始pending无法清零 | IRQ 3 IP寄存器访问和触发属性 |
+| 5 | IRQ 3无法使能 | 描述符是否安装、IE寄存器访问 |
+| 6 | pending写入失败 | `CLICINTIP[3]`地址和8位MMIO访问 |
+| 7 | pending未锁存为1 | 全局中断是否提前打开、IP寄存器行为 |
+| 8 | 等待ISR超时 | `mstatus.MIE`、`CLICINTIE[3]`、阈值、level、`mtvt[3]`和入口地址 |
+| 9 | ISR后结果不一致 | `mcause`、pending自动清除、处理次数、参数或分发统计 |
+
+### 9.6 测试代码对应关系
+
+| 内容 | 文件 |
+| --- | --- |
+| 独立CLIC自测应用 | `apps/e902-clic-test/main.c` |
+| CLIC寄存器访问、注册和C分发 | `rt-thread/libcpu/risc-v/e902/clic.c` |
+| RV32E公共中断入口和`mret` | `rt-thread/libcpu/risc-v/e902/interrupt_gcc.S` |
+| T22 IRQ编号和初始化封装 | `soc/t22-serdes/t22_serdes_irq.c`、`include/t22_serdes_irq.h` |
+| 80项硬件向量表 | `soc/t22-serdes/interrupt_vectors.S` |
+| 向量布局和链接期断言 | `soc/t22-serdes/linker.ld` |
+| CKLink启动配置 | `.vscode/launch.json` |
+
+## 10. 后续验证
 
 当前异常自测完成后，继续增加测试时应保持每次只引入一个变量：
 
-1. CLIC软件中断和`mtvt`硬件向量入口。
-2. DW Timer IRQ 27和共享通道清源。
-3. RV32E线程初始栈和上下文切换。
-4. RT-Thread调度器和ISR退出调度。
-5. 长时间运行、栈水位、Tick漂移和异常恢复测试。
+1. DW Timer IRQ 27和共享通道清源。
+2. RV32E线程初始栈和上下文切换。
+3. RT-Thread调度器和ISR退出调度。
+4. 长时间运行、栈水位、Tick漂移和异常恢复测试。
 
 非法地址访问不应作为默认自测手段。若T22总线对未映射地址不返回错误而是永久等待，CPU可能无法进入异常入口，应先确认总线超时和看门狗复位机制。

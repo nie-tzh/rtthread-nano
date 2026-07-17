@@ -76,12 +76,14 @@ trig + CLICINTCTL + MINTTHRESH
 | 硬件能力 | E902可配置范围 | 当前T22结论 |
 | --- | --- | --- |
 | 基础指令集 | RV32E[M]C | RV32EC，无M扩展 |
-| CLIC外部输入 | 1-240路 | 实际数量应读取`CLICINFO` |
-| `CLICINTCTL`有效位 | 2-5位 | 实际位数应读取`CLICINFO.CLICINTCTLBITS` |
-| 可编码中断level | 最多32级 | 由有效位数和`nlbits`决定 |
+| CLIC外部输入 | 1-240路 | 64路外部输入，CLIC总IRQ数为80 |
+| `CLICINTCTL`有效位 | 2-5位 | 3位，即`CLICINTCTL[7:5]` |
+| 可编码中断level | 最多32级 | 当前`nlbits=3`，形成8档可配置level编码 |
 | PMP区域 | 0/4/8/12/16 | 当前T22方案不使用U模式隔离 |
 
 本文引用的T22 RX `revD`裸机工程与当前RT-Thread目标运行在同一T22 E902平台上，因此其中的CLIC基地址、T22 IRQ映射和外设连接关系可以作为当前实现的直接依据，不属于“另一颗E902 SoC”的间接参考。仍需区分两类信息：E902核允许由RTL选择的参数应通过`CLICINFO`读取确认；T22固定的IRQ编号和外设连接则以T22 SoC定义为准。这样既能复用同平台裸机结论，也不会把E902核的可配置范围误写成所有芯片都相同的固定值。
+
+当前T22目标板实测`CLICINFO=0x00600050`：bit[12:0]为`0x50`，表示80个总IRQ；bit[24:21]为3，表示每个`CLICINTCTL`寄存器实现3个高位控制位。总IRQ 0-15为核内中断，因此T22还提供IRQ 16-79共64路外部输入。
 
 #### 1.2 M模式和U模式
 
@@ -274,7 +276,7 @@ CLICINTCTL[4:0]：未实现，按1补齐后参与有效编码比较
 可配置编码数量：2^3 = 8
 ```
 
-`CLICCFG.nlbits`再从这`N`个有效控制位中划分多少位作为level，剩余有效位作为同level内的priority。T22参考代码在运行时读取`CLICINTCTLBITS`，并令`nlbits = CLICINTCTLBITS`，所以所有已实现位都作为level使用，不再保留独立priority位。源码没有写死T22实际综合值，最终数值应在目标板读取`CLICINFO`后记录。
+`CLICCFG.nlbits`再从这`N`个有效控制位中划分多少位作为level，剩余有效位作为同level内的priority。T22参考代码和当前RT-Thread实现都令`nlbits = CLICINTCTLBITS`，所以所有已实现位都作为level使用，不再保留独立priority位。目标板实测`CLICINTCTLBITS=3`，因此当前使用3个level位和0个独立priority位。
 
 `MINTTHRESH`是M模式的全局接收门槛，不是当前正在执行中断的level。某路IRQ即使已经pending且`CLICINTIE[i]=1`，其有效level编码也必须严格高于`MINTTHRESH.mth`才有资格被CPU接受。提高阈值可以成批屏蔽低level请求，但不会清除pending，也不会修改各路IE和CTL。
 
@@ -730,6 +732,9 @@ RT-Thread在中断返回前可能选择另一个线程。此时：
 | 普通IRQ默认`shv` | 1，硬件向量 |
 | 普通IRQ默认`trig` | `00`，高电平有效 |
 | `CLIC_BASE` | `0xE0800000` |
+| `CLICINFO` | `0x00600050` |
+| CLIC总IRQ数 | 80 |
+| `CLICINTCTLBITS` | 3 |
 
 T22 `Reset_Handler`的相关顺序是：
 
@@ -961,7 +966,7 @@ IRQ 27由8个通道共享，处理流程应为：
 
 ## 第五部分 验证目标
 
-架构文档不展开测试实现；具体测试方法、构建命令、预期日志和失败分析见[《E902异常与现场验证》](e902-interrupt-validation.md)。
+架构文档不展开测试实现；具体测试方法、构建命令、预期日志和失败分析见[《E902异常与CLIC验证》](e902-interrupt-validation.md)。
 
 | 验证目标 | 关注内容 |
 | --- | --- |

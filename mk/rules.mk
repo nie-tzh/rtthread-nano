@@ -93,5 +93,6 @@ clean:
 help:
 	@printf "make [APP=demo] [BOARD=t22-deserializer-evb] [BUILD=debug|release] [O=build-dir] [-j]\n"
 	@printf "E902 exception test: make APP=e902-exception-test BOARD=t22-deserializer-evb BUILD=debug O=build/t22-deserializer-evb/e902-exception-test/debug\n"
+	@printf "E902 CLIC test: make APP=e902-clic-test BOARD=t22-deserializer-evb BUILD=debug O=build/t22-deserializer-evb/e902-clic-test/debug\n"
 
 -include $(DEPS)
