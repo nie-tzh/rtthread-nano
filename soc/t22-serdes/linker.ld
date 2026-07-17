@@ -23,6 +23,13 @@ SECTIONS
         __text_end = .;
     } > ROM
 
+    .vectors :
+    {
+        . = ALIGN(64);
+        KEEP(*(.vectors))
+        . = ALIGN(4);
+    } > ROM
+
     .rodata :
     {
         . = ALIGN(4);
@@ -76,4 +83,8 @@ SECTIONS
     ASSERT(SIZEOF(.config) <= LENGTH(CONFIG), "Configuration area overflow")
     ASSERT((e902_exception_entry & 0x3F) == 0,
            "E902 exception entry must be 64-byte aligned")
+    ASSERT((t22_serdes_irq_vectors & 0x3F) == 0,
+           "T22 CLIC vector table must be 64-byte aligned")
+    ASSERT((t22_serdes_irq_vectors_end - t22_serdes_irq_vectors) == 320,
+           "T22 CLIC vector table must contain 80 entries")
 }

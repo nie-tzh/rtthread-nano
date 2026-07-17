@@ -231,7 +231,7 @@ mstatus.MIE ：控制全局是否接受可屏蔽中断
 mie CSR      ：当前参考实现没有配置
 ```
 
-当前RT-Thread代码只验证同步异常。`startup.S`执行`csrci mstatus, 8`并始终保持全局中断关闭，尚未配置`mie` CSR或任何`CLICINTIE`。后续建立CLIC软件中断时，应明确配置对应`CLICINTIE[3]`，最后再打开`mstatus.MIE`，不要把`mie.MSIE`与`CLICINTIE[3]`混成同一个寄存器操作。
+当前RT-Thread移植已经实现CLIC基础层。`startup.S`先执行`csrci mstatus, 8`；CLIC初始化在全局中断关闭期间禁用全部单路IE，注册处理函数和配置中断属性后才能打开目标`CLICINTIE[i]`，所有入口就绪后才允许设置`mstatus.MIE`。当前实现与T22参考代码一致，不配置`mie` CSR，因此不能把`mie.MSIE`、`CLICINTIE[i]`和`mstatus.MIE`混成同一个寄存器操作。
 
 CLIC模式下`mcause`还包含进入和返回所需的扩展状态：
 
@@ -278,7 +278,7 @@ CLICINTCTL[4:0]：未实现，按1补齐后参与有效编码比较
 
 `MINTTHRESH`是M模式的全局接收门槛，不是当前正在执行中断的level。某路IRQ即使已经pending且`CLICINTIE[i]=1`，其有效level编码也必须严格高于`MINTTHRESH.mth`才有资格被CPU接受。提高阈值可以成批屏蔽低level请求，但不会清除pending，也不会修改各路IE和CTL。
 
-当前T22裸机`clic_config()`没有调用`csi_vic_set_thresh()`，也没有直接写`MINTTHRESH`，因此源码本身不能证明运行值；它依赖复位状态或前级启动环境。当前RT-Thread异常验证代码同样没有配置该寄存器，因为可屏蔽中断尚未启用。后续启用CLIC中断时，应在`mstatus.MIE=0`期间显式写入选定阈值并读回校验；第一版可令`MINTTHRESH.mth=0x00`，再通过各路`CLICINTIE`控制启用范围。
+当前T22裸机`clic_config()`没有调用`csi_vic_set_thresh()`，也没有直接写`MINTTHRESH`，因此源码本身不能证明运行值；它依赖复位状态或前级启动环境。当前RT-Thread CLIC初始化在`mstatus.MIE=0`期间显式写`MINTTHRESH.mth=0x00`并回读校验，再通过各路`CLICINTIE`控制启用范围。
 
 IRQ `i`对应四个8位寄存器：
 
@@ -804,7 +804,7 @@ CPU port中不应出现T22 UART、DW Timer等外设寄存器；驱动中也不�
 
 #### 11.2 第一版入口
 
-计划采用：
+当前CLIC基础入口采用：
 
 ```text
 同步异常
@@ -816,16 +816,15 @@ CPU port中不应出现T22 UART、DW Timer等外设寄存器；驱动中也不�
 
 普通CLIC中断
     -> mtvt[irq_id]
-    -> irq_common_entry或受控专用入口
-    -> 保存入口约定要求的IRQ现场
-    -> rt_interrupt_enter()
-    -> ISR分发并清除外设源
-    -> rt_interrupt_leave()
+    -> e902_irq_entry
+    -> 保存完整RV32E现场和必要CSR
+    -> e902_irq_dispatch()
+    -> 已注册处理函数清除中断源
     -> 恢复现场
     -> mret
 ```
 
-“受控专用入口”必须遵守统一、可审计的现场约定，不能让不同IRQ形成无法验证的栈帧。第一版可以保守保存全部RV32E GPR，稳定后再依据反汇编和时延测量缩减。
+当前80个T22向量项均指向同一个公共入口，第一版保守保存全部RV32E GPR，不为不同IRQ生成不同栈帧。当前公共入口直接分发已注册处理函数；接入RT-Thread内核时，再在统一分发边界加入`rt_interrupt_enter()`和`rt_interrupt_leave()`，不能在尚未接入内核的阶段伪造嵌套计数。
 
 普通硬件IRQ的现场用于保证当前ISR能够正确返回，并不在其中直接切换线程。若ISR执行期间的内核路径调用`rt_schedule()`，调度器会在`rt_interrupt_nest != 0`时调用`rt_hw_context_switch_interrupt()`记录切换请求并置位IRQ 3；`rt_interrupt_leave()`本身只维护中断嵌套计数。当前IRQ随后恢复自身现场并`mret`，pending的IRQ 3再进入固定线程现场路径，完成实际`sp`切换。即使两种现场第一版采用相同寄存器集合，其职责也不同。
 
@@ -888,31 +887,27 @@ RT-Thread内核 = M模式
 
 ### 12. 可靠初始化顺序
 
-计划采用以下顺序：
+CLIC基础层当前按以下顺序实现；线程上下文和RT-Thread ISR边界仍在后续阶段加入：
 
-1. 读取并保存原`mstatus`，保持`MIE=0`。
-2. 建立64字节对齐的异常公共入口。
-3. 写入`mtvec.BASE`；低位按E902 CLIC固定值写3，并读回校验。
-4. 建立64字节对齐且容量足够的`mtvt`向量表。
-5. 写入并读回`mtvt`。
-6. 读取`CLICINFO`，校验中断数量和`CLICINTCTLBITS`。
-7. 禁用所有已实现`CLICINTIE`。
-8. 按触发类型清理软件可清的pending，并清除相关外设历史状态。
-9. 配置`CLICCFG.nlbits`和`MINTTHRESH`。
-10. 配置测试IRQ的`shv`、`trig`和`CLICINTCTL`。
-11. 安装有效入口，并保证链接脚本`KEEP`相关段。
-12. 只使能当前验证需要的单路IRQ。
-13. 最后恢复或打开`mstatus.MIE`。
+1. `startup.S`清除`mstatus.MIE`，安装64字节对齐的异常公共入口，并写`mtvec.BASE | 3`。
+2. 完成`.data`、`.bss`和板级初始化；链接脚本已保留64字节对齐、80项的`mtvt`向量表。
+3. T22初始化入口校验向量表的精确大小。
+4. 读取`CLICINFO`，校验中断数量和E902支持的`CLICINTCTLBITS`范围。
+5. 在全局中断关闭时禁用所有已实现`CLICINTIE`。
+6. 写入并读回`mtvt`。
+7. 令`CLICCFG.nlbits=CLICINTCTLBITS`、`MINTTHRESH.mth=0`，并回读两个字段。
+8. 清空描述符表，为可用IRQ设置默认`shv=1`、高电平触发和最低控制编码。
+9. T22层确认硬件IRQ数量覆盖SoC最高IRQ 70。
+10. 注册目标IRQ：先保持该路关闭；边沿触发源清除旧pending，再安装处理函数并配置`shv`、`trig`和`CLICINTCTL`。
+11. 处理函数和清源路径就绪后，只打开实际使用的`CLICINTIE[i]`。
+12. 所有入口、向量和已启用中断源就绪后，最后恢复或打开`mstatus.MIE`。
 
 这个顺序的目标是：全局中断打开时，入口、栈、向量、处理函数和清源逻辑都已经有效。
 
-初始化代码应增加以下断言或诊断：
+当前实现已经检查`mtvt`对齐和读回、`CLICINFO`范围、IRQ边界、T22最高IRQ覆盖范围，以及向量表链接地址和精确大小。接入RT-Thread前还应继续增加以下断言或诊断：
 
-- `mtvec`和`mtvt`低6位为0。
-- `mtvec.MODE`读回为3。
-- `CLICINFO`中断数量不超过向量表容量。
-- 要使能的IRQ小于实现数量。
-- 向量表项不是0且落在可执行地址范围。
+- `mtvec`读回的BASE和固定MODE值符合预期。
+- 每个实际启用的向量表项不是0且落在可执行地址范围。
 - `sp`处于有效RAM范围并满足ABI对齐。
 
 ### 13. DW Timer系统Tick方案
