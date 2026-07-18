@@ -2,13 +2,13 @@
 
 本工程用于在采用玄铁E902 CPU核的T22解串器EVB上移植和运行RT-Thread Nano。
 
-当前已完成目标硬件和工具链确认、最小Makefile编译系统、裸机启动验证、T22解串器EVB板级初始化、DW APB UART早期轮询输出，以及E902同步异常入口、CLIC初始化和Machine Software Interrupt上板验证。基础固件的串口可以输出：
+当前已完成目标硬件和工具链确认、最小Makefile编译系统、裸机启动验证、T22解串器EVB板级初始化、DW APB UART早期轮询输出，以及E902同步异常入口、CLIC初始化、Machine Software Interrupt和DW Timer周期中断上板验证。基础固件的串口可以输出：
 
 ```text
 T22 deserializer EVB booting...
 ```
 
-第6阶段正在进行：DW APB Timer通道驱动、T22共享IRQ 27分发层和板级Tick接口已经完成，板卡固定使用零基通道0（TIMER1）。当前还未加入验证应用，也未完成周期中断上板验证。该硬件时基将在第8阶段接入`rt_tick_increase()`，不使用E902 Core Timer作为RT-Thread系统Tick来源。
+第6阶段已经完成：DW APB Timer通道驱动、T22共享IRQ 27分发层、板级Tick接口和独立周期中断验证应用均已通过目标板验证，板卡固定使用零基通道0（TIMER1）。该硬件时基将在第8阶段接入`rt_tick_increase()`，不使用E902 Core Timer作为RT-Thread系统Tick来源。下一步进入第7阶段，建立RV32E线程初始栈和上下文切换路径。
 
 默认构建目标由板卡配置自动绑定为：
 
@@ -53,3 +53,4 @@ build/t22-deserializer-evb/demo/debug/
 - [移植进度](docs/porting-progress.md)
 - [E902异常与CLIC中断架构](docs/e902-interrupt-architecture.md)
 - [E902异常与CLIC验证](docs/e902-interrupt-validation.md)
+- [E902 DW Timer周期中断验证](docs/e902-timer-validation.md)

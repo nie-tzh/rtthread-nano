@@ -156,6 +156,58 @@
                     "ignoreFailures": false
                 }
             ]
+        },
+        {
+            "name": "E902 DW Timer test | CKLink",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/t22-deserializer-evb/e902-timer-test/debug/firmware.elf",
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "riscv64-unknown-elf-gdb.exe",
+            "miDebuggerServerAddress": "localhost:1025",
+            "launchCompleteCommand": "exec-continue",
+            "setupCommands": [
+                {
+                    "description": "Disable GDB pagination",
+                    "text": "set pagination off",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set remote timeout",
+                    "text": "set remotetimeout 20",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Map WSL source paths to Windows",
+                    "text": "set substitute-path /mnt/e/Kniulink/01_Project E:/Kniulink/01_Project",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Set GDB working directory",
+                    "text": "cd ${workspaceFolder}",
+                    "ignoreFailures": false
+                }
+            ],
+            "postRemoteConnectCommands": [
+                {
+                    "description": "Reset and halt the target before loading the Timer test image",
+                    "text": "monitor reset halt",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Write Timer-test image to T22 ROM",
+                    "text": "restore ${workspaceFolder}/build/t22-deserializer-evb/e902-timer-test/debug/firmware.bin binary 0x00140000",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Keep debugger breakpoints in Debug Mode",
+                    "text": "monitor set resume-bkpt-exception off",
+                    "ignoreFailures": false
+                }
+            ]
         }
     ]
 }
