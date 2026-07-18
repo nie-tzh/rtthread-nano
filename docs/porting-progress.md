@@ -11,7 +11,7 @@
 | 5. 建立异常与CLIC中断机制 | 已完成 | 同步异常和CLIC IRQ 3软件中断均已完成上板验证 |
 | 6. 实现DW Timer并验证周期中断 | 已完成 | T22 DW Timer周期时基和共享IRQ 27已经完成上板验证 |
 | 7. 实现E902线程栈与上下文切换 | 已完成 | RV32E线程栈、首次启动、IRQ 3延后切换和独立双线程验证均已通过目标板验证 |
-| 8. 接入RT-Thread Nano内核与系统Tick | 未开始 | 验证调度、延时、时间片和内核Tick |
+| 8. 接入RT-Thread Nano内核与系统Tick | 进行中 | 必要代码已加入，等待独立调度与Tick上板验证 |
 | 9. 完善驱动框架与板级外设 | 未开始 | 将板级外设接入RT-Thread Device框架 |
 | 10. 建立组件与应用开发框架 | 未开始 | 建立稳定的组件、应用和配置入口 |
 | 11. 开展功能、异常与稳定性测试 | 未开始 | 完成功能、压力、异常和长时间运行测试 |
@@ -503,6 +503,69 @@ IRQ 3尚未处理时出现新的调度请求，只更新最终`to`，不覆盖�
 独立`e902-context-switch-test`应用已经加入，验证方法、理论计数、实测日志和失败码见[《E902线程上下文切换验证》](e902-context-switch-validation.md)。该应用已经完成Debug、Release构建、严格告警、ELF和反汇编检查，并已通过目标板验证：20次调度请求合并为19次IRQ 3和19次实际切换，线程A/B寄存器检查通过，最终IRQ 3 pending为0，输出`E902 context self-test: PASS`。实测同时确认，IRQ 3切换线程时必须保留当前`mcause.MPIL`，不能从目标线程现场恢复`mcause`。
 
 第7阶段已完成。下一步进入第8阶段：把CPU port接入RT-Thread调度器，建立真实线程控制块、就绪队列和调度路径，并将T22 DW Timer周期回调接入`rt_tick_increase()`。
+
+## 8. 接入RT-Thread Nano内核与系统Tick
+
+### 8.1 阶段目标
+
+把第7阶段已经验证的CPU port接入RT-Thread v4.1.1 Nano内核，以真实线程控制块、就绪队列和内核定时器驱动调度。该阶段需要同时验证首次调度、同优先级时间片、线程延时、Timer ISR唤醒和IRQ退出后的延后上下文切换。
+
+当前先采用静态线程和静态Idle栈，不启用Heap、组件自动初始化、设备框架和FinSH。这些能力不影响调度与Tick闭环，留到后续应用框架阶段逐项接入。
+
+### 8.2 最小内核构建
+
+`rt-thread/rtthread.mk`加入第8阶段需要的最小内核源文件：
+
+```text
+clock.c + idle.c + irq.c + kservice.c
+object.c + scheduler.c + thread.c + timer.c
+```
+
+板级`rtconfig.h`固定32级优先级、1000 Hz系统Tick、4字节ABI对齐和栈溢出检查。RT-Thread v4.1.1在当前裁剪配置下有三处配置相关的上游告警，构建文件只对对应上游对象定向关闭，不降低应用、Board和CPU port的告警级别。
+
+### 8.3 中断边界与调度
+
+E902公共IRQ入口在保存完整现场后执行：
+
+```text
+rt_interrupt_enter()
+    -> e902_irq_dispatch()
+    -> rt_interrupt_leave()
+    -> 检查IRQ 3切换请求
+    -> 恢复原线程或目标线程现场
+    -> mret
+```
+
+`rtinterrupt.c`提供同名弱空实现，使异常、CLIC、Timer等裸机测试仍可复用公共入口；RT-Thread镜像链接`src/irq.c`后，强实现自动覆盖弱实现并维护`rt_interrupt_nest`。
+
+IRQ 27的板级Tick回调已经位于上述中断边界内，因此只调用一次`rt_tick_increase()`，不能再次调用`rt_interrupt_enter()`或`rt_interrupt_leave()`。若Tick使线程时间片耗尽或内核定时器唤醒更合适的线程，调度器在中断态记录切换请求；当前IRQ完成后，pending的IRQ 3执行实际SP切换。
+
+### 8.4 板级接口与初始化顺序
+
+T22板级RT-Thread适配实现`rt_hw_interrupt_init()`、IRQ屏蔽、打开和普通IRQ注册。IRQ 3由上下文切换层保留，IRQ 27由DW Timer共享分发层保留，通用`rt_hw_interrupt_install()`不能覆盖这两路。普通IRQ默认按高电平触发注册；有专用触发属性的板级驱动继续使用E902 CLIC接口。
+
+第一版初始化顺序为：
+
+```text
+mstatus.MIE = 0
+    -> rt_hw_interrupt_init()
+    -> rt_system_timer_init()
+    -> rt_system_scheduler_init()
+    -> 初始化并启动静态应用线程
+    -> rt_thread_idle_init()
+    -> board_tick_init(1000 Hz)
+    -> board_tick_start()
+    -> rt_system_scheduler_start()
+    -> 首线程初始现场mret后开放MIE
+```
+
+在调度器设置`rt_current_thread`之前不能响应系统Tick，因为`rt_tick_increase()`需要访问当前线程的时间片字段。因此Timer可以预先配置和启动，但全局中断必须保持关闭，直到首次线程恢复完成。
+
+### 8.5 当前状态
+
+必要代码已经完成Debug、Release构建、严格告警、ELF属性和反汇编检查。RT-Thread镜像确认链接`src/irq.c`的强中断边界实现，裸机镜像仍链接弱空实现；两类镜像均保持RV32E、RVC和ILP32E属性。
+
+第8阶段尚未完成。第二个提交需要增加独立应用，验证同优先级时间片轮转、`rt_thread_delay()`、内核Tick、Idle过渡、IRQ嵌套计数、线程栈哨兵和最终pending状态。
 
 ## 设计边界和已知风险
 

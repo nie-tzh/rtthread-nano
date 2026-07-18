@@ -37,8 +37,10 @@ e902_irq_entry:
     sw   t0, E902_EXCEPTION_MTVAL_OFFSET(sp)
     sw   zero, E902_EXCEPTION_RESERVED_OFFSET(sp)
 
+    call rt_interrupt_enter
     mv   a0, sp
     call e902_irq_dispatch
+    call rt_interrupt_leave
 
     lw   t0, E902_EXCEPTION_MCAUSE_OFFSET(sp)
     bgez t0, .Lirq_restore

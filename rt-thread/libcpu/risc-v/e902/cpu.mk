@@ -5,6 +5,7 @@ SRCS += $(E902_CPU_DIR)/clic.c \
         $(E902_CPU_DIR)/context_gcc.S \
         $(E902_CPU_DIR)/exception.c \
         $(E902_CPU_DIR)/exception_gcc.S \
-        $(E902_CPU_DIR)/interrupt_gcc.S
+        $(E902_CPU_DIR)/interrupt_gcc.S \
+        $(E902_CPU_DIR)/rtinterrupt.c
 
 INCLUDES += $(E902_CPU_DIR)/include

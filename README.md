@@ -8,7 +8,7 @@
 T22 deserializer EVB booting...
 ```
 
-第6阶段已经完成：DW APB Timer通道驱动、T22共享IRQ 27分发层、板级Tick接口和独立周期中断验证应用均已通过目标板验证，板卡固定使用零基通道0（TIMER1）。第7阶段已经完成：RV32E线程初始栈、首次线程恢复、IRQ 3延后上下文切换和独立双线程验证应用均已通过目标板验证。下一步进入第8阶段，将上下文切换接入RT-Thread调度器，并将T22 DW Timer接入`rt_tick_increase()`；不使用E902 Core Timer作为RT-Thread系统Tick来源。
+第6、7阶段已经完成：T22 DW Timer周期时基以及RV32E线程栈、首次启动和IRQ 3延后上下文切换均已通过目标板验证。第8阶段正在进行，最小RT-Thread Nano内核、T22板级中断适配和系统Tick接入代码已经加入，当前等待独立调度验证。系统Tick固定使用TIMER1，不使用E902 Core Timer。
 
 默认构建目标由板卡配置自动绑定为：
 

@@ -835,7 +835,7 @@ CPU port中不应出现T22 UART、DW Timer等外设寄存器；驱动中也不�
     -> mret
 ```
 
-当前80个T22向量项均指向同一个公共入口，第一版保守保存全部RV32E GPR，不为不同IRQ生成不同栈帧。当前公共入口直接分发已注册处理函数；接入RT-Thread内核时，再在统一分发边界加入`rt_interrupt_enter()`和`rt_interrupt_leave()`，不能在尚未接入内核的阶段伪造嵌套计数。
+当前80个T22向量项均指向同一个公共入口，第一版保守保存全部RV32E GPR，不为不同IRQ生成不同栈帧。公共入口在C分发前后调用`rt_interrupt_enter()`和`rt_interrupt_leave()`：RT-Thread镜像使用`src/irq.c`强实现维护嵌套计数，裸机镜像使用CPU port弱空实现保持既有测试行为。`a0`属于调用者保存寄存器，因此传给`e902_irq_dispatch()`的现场指针必须在`rt_interrupt_enter()`返回后由`sp`重新装载，不能假设前一次C调用会保留`a0`。
 
 普通硬件IRQ的现场用于保证当前ISR能够正确返回，并不在其中直接切换线程。若ISR执行期间的内核路径调用`rt_schedule()`，调度器会在`rt_interrupt_nest != 0`时调用`rt_hw_context_switch_interrupt()`记录切换请求并置位IRQ 3；`rt_interrupt_leave()`本身只维护中断嵌套计数。当前IRQ随后恢复自身现场并`mret`，pending的IRQ 3再进入固定线程现场路径，完成实际`sp`切换。即使两种现场第一版采用相同寄存器集合，其职责也不同。
 
@@ -887,7 +887,7 @@ CLIC_BASE + 0x1000 + 4 * 3 = 0xE080100C
 
 因此，准确表述应是：“调度器做出切换决策并请求CPU port切换；除首次线程启动外，第一版E902方案在Machine Software Interrupt处理程序中执行实际上下文切换。”
 
-独立双线程验证的方法、理论切换次数、寄存器特征值和失败分析见[《E902线程上下文切换验证》](e902-context-switch-validation.md)。CPU port已经完成目标板验证；RT-Thread调度器接入和系统Tick仍属于第8阶段。
+独立双线程验证的方法、理论切换次数、寄存器特征值和失败分析见[《E902线程上下文切换验证》](e902-context-switch-validation.md)。CPU port已经完成目标板验证；RT-Thread调度器和系统Tick必要代码已接入，目标板调度验证仍属于第8阶段。
 
 #### 11.4 当前特权模式
 
@@ -903,7 +903,7 @@ RT-Thread内核 = M模式
 
 ### 12. 可靠初始化顺序
 
-CLIC基础层和线程上下文当前按以下顺序实现；RT-Thread ISR边界仍在后续阶段加入：
+CLIC基础层、线程上下文和RT-Thread ISR边界当前按以下顺序实现：
 
 1. `startup.S`清除`mstatus.MIE`，安装64字节对齐的异常公共入口，并写`mtvec.BASE | 3`。
 2. 完成`.data`、`.bss`和板级初始化；链接脚本已保留64字节对齐、80项的`mtvt`向量表。
@@ -972,7 +972,7 @@ DW Timer路径分为四层：
 | `drivers/timer/dw_apb_timer/` | 单通道寄存器布局、配置、启停、状态和EOI |
 | `soc/t22-serdes/t22_serdes_timer.c` | 8通道资源、活动掩码、共享IRQ 27注册与分发 |
 | `boards/t22-deserializer-evb/board_tick.c` | 选择通道0并提供系统Tick回调接口 |
-| `rt-thread`接入层 | 第8阶段将周期回调连接到内核Tick与中断边界 |
+| `rt-thread`接入层 | 周期回调调用`rt_tick_increase()`，公共IRQ入口维护内核中断边界 |
 
 通道0归Board系统Tick独占。其他定时功能必须通过SoC共享分发层注册独立通道，不能直接替换IRQ 27处理函数，也不能操作通道0寄存器。
 
@@ -995,7 +995,7 @@ IRQ 27配置为高电平硬件向量中断。处理函数读取公共状态寄�
 
 处理函数不能在完成第一个通道后提前返回，否则同时pending的后续通道得不到清源，共享中断线可能持续有效。外设清源放在回调之前，避免回调执行较长时IRQ 27一直保持有效。
 
-第6阶段的回调只用于裸机周期验证，不调用`rt_tick_increase()`。第8阶段接入内核时，仍需在正确的RT-Thread中断进入、退出边界内，每个Tick事件调用一次`rt_tick_increase()`。
+第6阶段的裸机回调不调用`rt_tick_increase()`。RT-Thread应用注册独立Tick回调，每个TIMER1周期调用一次`rt_tick_increase()`；`rt_interrupt_enter()`和`rt_interrupt_leave()`由E902公共IRQ入口统一负责，Tick回调不能重复维护嵌套计数。
 
 #### 13.4 初始化与启停顺序
 
