@@ -11,8 +11,8 @@
 | 5. 建立异常与CLIC中断机制 | 已完成 | 同步异常和CLIC IRQ 3软件中断均已完成上板验证 |
 | 6. 实现DW Timer并验证周期中断 | 已完成 | T22 DW Timer周期时基和共享IRQ 27已经完成上板验证 |
 | 7. 实现E902线程栈与上下文切换 | 已完成 | RV32E线程栈、首次启动、IRQ 3延后切换和独立双线程验证均已通过目标板验证 |
-| 8. 接入RT-Thread Nano内核与系统Tick | 进行中 | 必要代码已加入，等待独立调度与Tick上板验证 |
-| 9. 完善驱动框架与板级外设 | 未开始 | 将板级外设接入RT-Thread Device框架 |
+| 8. 接入RT-Thread Nano内核与系统Tick | 已完成 | 静态线程调度、时间片、延时、Idle和TIMER1系统Tick均已通过目标板验证 |
+| 9. 完善驱动框架与板级外设 | 未开始 | 将UART、Timer和后续板级外设接入RT-Thread Device框架 |
 | 10. 建立组件与应用开发框架 | 未开始 | 建立稳定的组件、应用和配置入口 |
 | 11. 开展功能、异常与稳定性测试 | 未开始 | 完成功能、压力、异常和长时间运行测试 |
 | 12. 完善调试支持、文档与工程交付 | 未开始 | 形成可复现的构建、调试和交付资料 |
@@ -362,7 +362,7 @@ T22 deserializer EVB booting...
 
 ### 6.1 阶段目标
 
-先建立与RT-Thread内核无关的稳定周期时基，验证T22 DW Timer、CLIC IRQ 27和公共中断入口能够持续协同工作。第6阶段只通过回调报告周期事件；`rt_tick_increase()`以及RT-Thread中断进入、退出边界在第8阶段接入。
+先建立与RT-Thread内核无关的稳定周期时基，验证T22 DW Timer、CLIC IRQ 27和公共中断入口能够持续协同工作。第6阶段只通过回调报告周期事件；`rt_tick_increase()`以及RT-Thread中断进入、退出边界已在第8阶段接入。
 
 ### 6.2 已确定的硬件资源
 
@@ -502,7 +502,7 @@ IRQ 3尚未处理时出现新的调度请求，只更新最终`to`，不覆盖�
 
 独立`e902-context-switch-test`应用已经加入，验证方法、理论计数、实测日志和失败码见[《E902线程上下文切换验证》](e902-context-switch-validation.md)。该应用已经完成Debug、Release构建、严格告警、ELF和反汇编检查，并已通过目标板验证：20次调度请求合并为19次IRQ 3和19次实际切换，线程A/B寄存器检查通过，最终IRQ 3 pending为0，输出`E902 context self-test: PASS`。实测同时确认，IRQ 3切换线程时必须保留当前`mcause.MPIL`，不能从目标线程现场恢复`mcause`。
 
-第7阶段已完成。下一步进入第8阶段：把CPU port接入RT-Thread调度器，建立真实线程控制块、就绪队列和调度路径，并将T22 DW Timer周期回调接入`rt_tick_increase()`。
+第7阶段已完成。第8阶段的RT-Thread调度器、TIMER1系统Tick和中断边界接入内容见下一节。
 
 ## 8. 接入RT-Thread Nano内核与系统Tick
 
@@ -565,7 +565,9 @@ mstatus.MIE = 0
 
 必要代码已经完成Debug、Release构建、严格告警、ELF属性和反汇编检查。RT-Thread镜像确认链接`src/irq.c`的强中断边界实现，裸机镜像仍链接弱空实现；两类镜像均保持RV32E、RVC和ILP32E属性。
 
-第8阶段尚未完成。第二个提交需要增加独立应用，验证同优先级时间片轮转、`rt_thread_delay()`、内核Tick、Idle过渡、IRQ嵌套计数、线程栈哨兵和最终pending状态。
+独立`e902-rtthread-test`应用已经加入，验证方法、执行阶段、实测日志和失败码见[《E902 RT-Thread调度与Tick验证》](e902-rtthread-validation.md)。该应用已经完成Debug、Release构建、严格告警、ELF、强弱符号选择、反汇编检查和目标板验证。目标板实测TIMER1产生21次内核Tick、CPU port完成31次实际上下文切换，A/B时间片和延时各完成4轮，线程态中断嵌套计数为0，最终输出`E902 RT-Thread self-test: PASS`。本轮验证使用`src/irq.c`强中断边界实现，并确认公共IRQ入口在调用`rt_interrupt_enter()`后按ILP32E ABI重新装载现场参数。
+
+第8阶段已完成。目标板已确认同优先级时间片轮转、`rt_thread_delay()`、内核Tick、Idle过渡、IRQ嵌套计数、线程栈哨兵和IRQ 3/27最终pending状态全部符合预期。下一步进入第9阶段，开始设备框架和板级驱动接入。
 
 ## 设计边界和已知风险
 

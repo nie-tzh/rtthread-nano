@@ -8,7 +8,7 @@
 T22 deserializer EVB booting...
 ```
 
-第6、7阶段已经完成：T22 DW Timer周期时基以及RV32E线程栈、首次启动和IRQ 3延后上下文切换均已通过目标板验证。第8阶段正在进行，最小RT-Thread Nano内核、T22板级中断适配和系统Tick接入代码已经加入，当前等待独立调度验证。系统Tick固定使用TIMER1，不使用E902 Core Timer。
+第6、7、8阶段已经完成：T22 DW Timer周期时基、RV32E线程上下文、RT-Thread Nano调度器和TIMER1系统Tick均已通过目标板验证。下一步进入第9阶段，将板级外设逐步接入RT-Thread Device框架；系统Tick继续固定使用TIMER1，不使用E902 Core Timer。
 
 默认构建目标由板卡配置自动绑定为：
 
@@ -55,3 +55,4 @@ build/t22-deserializer-evb/demo/debug/
 - [E902异常与CLIC验证](docs/e902-interrupt-validation.md)
 - [E902 DW Timer周期中断验证](docs/e902-timer-validation.md)
 - [E902线程上下文切换验证](docs/e902-context-switch-validation.md)
+- [E902 RT-Thread调度与Tick验证](docs/e902-rtthread-validation.md)

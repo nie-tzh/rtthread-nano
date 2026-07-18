@@ -887,7 +887,7 @@ CLIC_BASE + 0x1000 + 4 * 3 = 0xE080100C
 
 因此，准确表述应是：“调度器做出切换决策并请求CPU port切换；除首次线程启动外，第一版E902方案在Machine Software Interrupt处理程序中执行实际上下文切换。”
 
-独立双线程验证的方法、理论切换次数、寄存器特征值和失败分析见[《E902线程上下文切换验证》](e902-context-switch-validation.md)。CPU port已经完成目标板验证；RT-Thread调度器和系统Tick必要代码已接入，目标板调度验证仍属于第8阶段。
+独立双线程验证的方法、理论切换次数、寄存器特征值和失败分析见[《E902线程上下文切换验证》](e902-context-switch-validation.md)。CPU port和RT-Thread调度、系统Tick已完成目标板验证；后续工作进入设备框架和板级驱动接入阶段。
 
 #### 11.4 当前特权模式
 
@@ -996,6 +996,8 @@ IRQ 27配置为高电平硬件向量中断。处理函数读取公共状态寄�
 处理函数不能在完成第一个通道后提前返回，否则同时pending的后续通道得不到清源，共享中断线可能持续有效。外设清源放在回调之前，避免回调执行较长时IRQ 27一直保持有效。
 
 第6阶段的裸机回调不调用`rt_tick_increase()`。RT-Thread应用注册独立Tick回调，每个TIMER1周期调用一次`rt_tick_increase()`；`rt_interrupt_enter()`和`rt_interrupt_leave()`由E902公共IRQ入口统一负责，Tick回调不能重复维护嵌套计数。
+
+RT-Thread调度与Tick的独立验证方法见[《E902 RT-Thread调度与Tick验证》](e902-rtthread-validation.md)，目标板验证已通过；后续长时间Tick漂移、丢Tick和高负载测试属于第11阶段。
 
 #### 13.4 初始化与启停顺序
 
