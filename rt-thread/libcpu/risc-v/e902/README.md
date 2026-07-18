@@ -17,7 +17,7 @@ include/e902_clic.h      CLIC和IRQ分发接口
 
 线程上下文与中断入口共用80字节RV32E现场。普通调度请求只记录`from/to`并置位CLIC IRQ 3；IRQ 3统一入口完成实际线程SP保存和装载。首次线程启动由`rt_hw_context_switch_to()`直接恢复人工构造的初始现场。
 
-必要代码已完成构建和反汇编检查，独立双线程目标板验证放在第7阶段的第二个提交中。
+必要代码已完成构建和反汇编检查，独立双线程应用已经通过目标板验证。验证方法、理论计数和失败码见工程`docs/e902-context-switch-validation.md`。
 
 这里只放置CPU、RISC-V CSR、RV32E ABI、异常入口、CLIC核心机制和线程上下文相关内容。
 

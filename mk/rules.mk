@@ -95,5 +95,6 @@ help:
 	@printf "E902 exception test: make APP=e902-exception-test BOARD=t22-deserializer-evb BUILD=debug O=build/t22-deserializer-evb/e902-exception-test/debug\n"
 	@printf "E902 CLIC test: make APP=e902-clic-test BOARD=t22-deserializer-evb BUILD=debug O=build/t22-deserializer-evb/e902-clic-test/debug\n"
 	@printf "E902 DW Timer test: make APP=e902-timer-test BOARD=t22-deserializer-evb BUILD=debug O=build/t22-deserializer-evb/e902-timer-test/debug\n"
+	@printf "E902 context switch test: make APP=e902-context-switch-test BOARD=t22-deserializer-evb BUILD=debug O=build/t22-deserializer-evb/e902-context-switch-test/debug\n"
 
 -include $(DEPS)

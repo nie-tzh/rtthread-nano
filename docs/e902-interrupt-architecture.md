@@ -887,6 +887,8 @@ CLIC_BASE + 0x1000 + 4 * 3 = 0xE080100C
 
 因此，准确表述应是：“调度器做出切换决策并请求CPU port切换；除首次线程启动外，第一版E902方案在Machine Software Interrupt处理程序中执行实际上下文切换。”
 
+独立双线程验证的方法、理论切换次数、寄存器特征值和失败分析见[《E902线程上下文切换验证》](e902-context-switch-validation.md)。CPU port已经完成目标板验证；RT-Thread调度器接入和系统Tick仍属于第8阶段。
+
 #### 11.4 当前特权模式
 
 当前第一版RT-Thread实现统一使用：
@@ -1021,7 +1023,7 @@ Timer启动、活动掩码更新和CLIC使能在全局中断关闭时完成。�
 
 ## 第五部分 验证目标
 
-架构文档不展开测试实现；异常和CLIC测试见[《E902异常与CLIC验证》](e902-interrupt-validation.md)，DW Timer测试见[《E902 DW Timer周期中断验证》](e902-timer-validation.md)。
+架构文档不展开测试实现；异常和CLIC测试见[《E902异常与CLIC验证》](e902-interrupt-validation.md)，DW Timer测试见[《E902 DW Timer周期中断验证》](e902-timer-validation.md)，线程上下文测试见[《E902线程上下文切换验证》](e902-context-switch-validation.md)。
 
 | 验证目标 | 关注内容 |
 | --- | --- |
