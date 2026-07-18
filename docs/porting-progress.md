@@ -10,7 +10,7 @@
 | 4. 板级初始化与串口输出 | 已完成 | 完成早期时钟、引脚、UART初始化和上板日志输出 |
 | 5. 建立异常与CLIC中断机制 | 已完成 | 同步异常和CLIC IRQ 3软件中断均已完成上板验证 |
 | 6. 实现DW Timer并验证周期中断 | 已完成 | T22 DW Timer周期时基和共享IRQ 27已经完成上板验证 |
-| 7. 实现E902线程栈与上下文切换 | 未开始 | 完成RV32E线程栈构造和软件中断上下文切换 |
+| 7. 实现E902线程栈与上下文切换 | 进行中 | 必要代码已加入，等待独立双线程上板验证 |
 | 8. 接入RT-Thread Nano内核与系统Tick | 未开始 | 验证调度、延时、时间片和内核Tick |
 | 9. 完善驱动框架与板级外设 | 未开始 | 将板级外设接入RT-Thread Device框架 |
 | 10. 建立组件与应用开发框架 | 未开始 | 建立稳定的组件、应用和配置入口 |
@@ -443,6 +443,64 @@ CLIC必须先于Timer注册完成，全局中断必须在入口、回调和清�
 - TIMER1能够再次启动，两个通道最终停止后IRQ 27 pending为0。
 
 第6阶段已经完成，下一步进入第7阶段，实现E902线程初始栈和上下文切换。当前约130 ms的功能自测不替代第11阶段的长时间Tick漂移、丢Tick和稳定性测试。
+
+## 7. 实现E902线程栈与上下文切换
+
+### 7.1 阶段目标
+
+在尚未接入RT-Thread调度器和系统Tick前，先建立与当前Nano内核接口兼容的RV32E线程现场，完成首次线程启动和IRQ 3延后上下文切换。第7阶段只验证CPU port保存、选择和恢复线程现场的能力；线程就绪队列、调度决策和`rt_tick_increase()`在第8阶段接入。
+
+### 7.2 线程现场
+
+当前线程现场与已验证的异常/中断入口共用80字节布局：
+
+```text
+x1-x15 + mepc + mstatus + mcause + mtval + reserved
+```
+
+玄铁SDK的E902 RT-Thread参考port使用17个32位槽，只包含`x1-x15 + mepc + mstatus`。本工程保留统一的20槽现场，是因为IRQ 3继续经过现有CLIC公共入口和C分发。普通IRQ返回同一现场时恢复其中的`mcause`；IRQ 3切换线程时，`mcause`属于当前正在退出的IRQ 3，切换`sp`后必须保留当前CSR中的值，不能从目标线程现场恢复。`mtval`和`reserved`不参与普通线程调度，但保留后可与现有入口共享同一现场布局。
+
+`rt_hw_stack_init()`按照RT-Thread传入的栈顶地址向下构造初始现场，并设置：
+
+- `ra = thread_exit`。
+- `sp = 对齐后的线程栈顶`。
+- `gp = __global_pointer$`。
+- `a0 = parameter`。
+- `mepc = thread_entry`。
+- `mstatus.MPP = M`、`mstatus.MPIE = 1`。
+- 初始`mcause = 0`，由`rt_hw_context_switch_to()`在第一次启动线程时装载；IRQ 3切换线程时不装载该字段。
+
+### 7.3 切换请求与实际切换
+
+当前Nano内核向CPU port传入的是线程控制块中`sp`字段的地址，即`&thread->sp`。普通线程调度和中断态调度分别调用`rt_hw_context_switch()`与`rt_hw_context_switch_interrupt()`，两者在E902第一版实现中使用同一延后切换路径：
+
+```text
+记录第一个from字段地址
+    -> 始终更新最终to字段地址
+    -> 置位切换标志
+    -> 设置CLICINTIP[3]
+    -> IRQ 3公共入口保存当前80字节现场
+    -> current from->sp = 当前现场地址
+    -> sp = target to->sp
+    -> 保留当前IRQ 3的mcause
+    -> 恢复目标线程的mstatus、mepc和GPR并mret
+```
+
+IRQ 3尚未处理时出现新的调度请求，只更新最终`to`，不覆盖第一次记录的真实`from`。若请求发生在硬件ISR中，IRQ 3在当前`mstatus.MIE=0`期间保持pending，待硬件ISR完成`mret`后再执行实际线程切换。
+
+第一个线程不经过IRQ 3。`rt_hw_context_switch_to()`直接读取`to->sp`，装载人工构造的初始现场并通过`mret`进入线程入口。
+
+### 7.4 当前状态
+
+必要代码已经完成以下静态验证：
+
+- `demo`、异常、CLIC和DW Timer测试应用均可无警告回归构建。
+- Debug和Release工具链均能汇编新增上下文入口。
+- 使用额外严格告警检查上下文C代码。
+- 反汇编确认新增代码只访问RV32E存在的`x0-x15`。
+- ELF继续保持RV32E、RVC和ILP32E属性。
+
+第7阶段尚未完成。第二个提交需要增加独立双线程应用，验证首次启动、A/B往返切换、寄存器现场、栈哨兵、请求计数和IRQ 3清pending行为。
 
 ## 设计边界和已知风险
 

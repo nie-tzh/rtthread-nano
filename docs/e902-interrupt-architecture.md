@@ -685,7 +685,13 @@ __attribute__((interrupt("machine")))
 x1-x15 + mepc + mstatus
 ```
 
-这个布局适合作为当前RT-Thread实现的起点，但仍需结合当前工具链、RT-Thread Nano版本和T22入口方式重新审查。`mcause`可以作为异常诊断或嵌套现场的一部分，但普通线程恢复并不必然需要把它放入基础线程帧。
+本工程经过重新审查后没有机械复制该布局，而是让线程上下文与现有异常/中断入口共用20个32位槽、共80字节：
+
+```text
+x1-x15 + mepc + mstatus + mcause + mtval + reserved
+```
+
+选择统一现场的原因是IRQ 3继续经过已验证的CLIC公共入口和C分发。普通IRQ返回同一现场时，需要恢复该现场保存的`mcause`，使`mret`使用其中的`MPIL`恢复进入中断前的Machine Interrupt Level。IRQ 3切换到另一个线程时则不同：`mcause`描述的是当前正在退出的IRQ 3，不属于目标线程；切换`sp`后必须保留当前CSR中的IRQ 3 `mcause`，不能用目标线程现场中的值覆盖它。`mtval`和`reserved`虽然不参与普通线程调度，但保留它们可以避免异常、普通IRQ和线程切换维护多套偏移。
 
 必须保证以下三处使用同一布局：
 
@@ -841,7 +847,7 @@ CPU port中不应出现T22 UART、DW Timer等外设寄存器；驱动中也不�
 2. **调度决策**：RT-Thread选择`from`线程和`to`线程。
 3. **上下文切换**：CPU port保存`from`现场、切换`sp`并恢复`to`现场。
 
-第一版计划参考玄铁`e902mt` port，使用Machine Software Interrupt，即IRQ 3延后执行常规上下文切换：
+第一版已经参考玄铁`e902mt` port实现Machine Software Interrupt，即IRQ 3延后执行常规上下文切换：
 
 ```text
 RT-Thread选出to线程
@@ -850,9 +856,12 @@ RT-Thread选出to线程
     -> IRQ 3入口保存from线程完整现场
     -> 把from->sp更新为当前sp
     -> sp = to->sp
-    -> 恢复to线程完整现场
+    -> 保留当前IRQ 3的mcause
+    -> 恢复to线程的mstatus、mepc和GPR
     -> mret进入to线程
 ```
+
+这里不能在切换`sp`后从`to`线程现场恢复`mcause`。新线程的初始`mcause`为0，若它覆盖当前IRQ 3的`mcause`，`mret`将无法使用当前中断的`MPIL`退出CLIC level；后续同level的IRQ 3会保持pending而不能再次响应。实现中，`.Lirq_restore`为普通IRQ恢复保存的`mcause`后进入公共恢复代码；`rt_hw_context_switch_to()`在第一次启动线程时装载初始`mcause`；IRQ 3切换线程则直接进入`e902_context_restore`，保留当前CSR中的`mcause`。玄铁`e902mt`参考port的任务切换路径同样只从目标线程恢复GPR、`mepc`和`mstatus`。
 
 IRQ 3的pending地址按寄存器模型计算为：
 
@@ -873,10 +882,10 @@ CLIC_BASE + 0x1000 + 4 * 3 = 0xE080100C
 并非所有线程启动都经过软件中断：
 
 - 第一个线程由`rt_hw_context_switch_to()`直接装载目标`sp`、恢复初始现场并`mret`。
-- 后续普通线程切换计划由IRQ 3处理程序执行实际寄存器切换。
+- 后续普通线程切换由IRQ 3处理程序执行实际寄存器切换。
 - 若调度发生在硬件ISR中且`MIE`仍关闭，IRQ 3先保持pending，待当前ISR返回后再被接受。
 
-因此，准确表述应是：“调度器做出切换决策并请求CPU port切换；除首次线程启动外，第一版E902方案计划在Machine Software Interrupt处理程序中执行实际上下文切换。”
+因此，准确表述应是：“调度器做出切换决策并请求CPU port切换；除首次线程启动外，第一版E902方案在Machine Software Interrupt处理程序中执行实际上下文切换。”
 
 #### 11.4 当前特权模式
 
@@ -892,7 +901,7 @@ RT-Thread内核 = M模式
 
 ### 12. 可靠初始化顺序
 
-CLIC基础层当前按以下顺序实现；线程上下文和RT-Thread ISR边界仍在后续阶段加入：
+CLIC基础层和线程上下文当前按以下顺序实现；RT-Thread ISR边界仍在后续阶段加入：
 
 1. `startup.S`清除`mstatus.MIE`，安装64字节对齐的异常公共入口，并写`mtvec.BASE | 3`。
 2. 完成`.data`、`.bss`和板级初始化；链接脚本已保留64字节对齐、80项的`mtvt`向量表。
@@ -903,9 +912,10 @@ CLIC基础层当前按以下顺序实现；线程上下文和RT-Thread ISR边界
 7. 令`CLICCFG.nlbits=CLICINTCTLBITS`、`MINTTHRESH.mth=0`，并回读两个字段。
 8. 清空描述符表，为可用IRQ设置默认`shv=1`、高电平触发和最低控制编码。
 9. T22层确认硬件IRQ数量覆盖SoC最高IRQ 70。
-10. 注册目标IRQ：先保持该路关闭；边沿触发源清除旧pending，再安装处理函数并配置`shv`、`trig`和`CLICINTCTL`。
-11. 处理函数和清源路径就绪后，只打开实际使用的`CLICINTIE[i]`。
-12. 所有入口、向量和已启用中断源就绪后，最后恢复或打开`mstatus.MIE`。
+10. 调用`e902_context_switch_init()`，把IRQ 3注册为正边沿硬件向量中断，清除旧pending并使能该路。
+11. 注册其他目标IRQ：先保持该路关闭；边沿触发源清除旧pending，再安装处理函数并配置`shv`、`trig`和`CLICINTCTL`。
+12. 处理函数和清源路径就绪后，只打开实际使用的`CLICINTIE[i]`。
+13. 所有入口、向量和已启用中断源就绪后，最后恢复或打开`mstatus.MIE`。
 
 这个顺序的目标是：全局中断打开时，入口、栈、向量、处理函数和清源逻辑都已经有效。
 
@@ -1022,7 +1032,8 @@ Timer启动、活动掩码更新和CLIC使能在全局中断关闭时完成。�
 | CLIC软件中断 | `mtvt`、`shv`、`CLICINTIE[3]`和pending清除 |
 | 不可恢复异常 | 记录现场后停机，不无条件跳过非法指令或访问错误 |
 | 周期中断 | DW Timer频率、共享IRQ 27分发、停止隔离和再次启动 |
-| 后续系统验证 | 上下文切换、RT-Thread调度和长期运行 |
+| 线程上下文 | 初始栈、首次`mret`、IRQ 3往返切换、寄存器和栈完整性 |
+| 后续系统验证 | RT-Thread调度、ISR退出调度和长期运行 |
 
 ## 附录
 
