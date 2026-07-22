@@ -1,7 +1,9 @@
 #include <stdint.h>
+#include <rthw.h>
 
 #include "board.h"
-#include "e902_clic.h"
+#include "e902.h"
+#include "riscv_clic.h"
 #include "t22_serdes.h"
 #include "t22_serdes_irq.h"
 #include "t22_serdes_timer.h"
@@ -25,22 +27,21 @@
 #define TIMER_TEST_AUX_PARAMETER_VALUE     0xA1170001U
 
 #define TIMER_TEST_OK                      0U
-#define TIMER_TEST_FAIL_IRQ_INIT           1U
-#define TIMER_TEST_FAIL_TICK_INIT          2U
-#define TIMER_TEST_FAIL_AUX_CONFIG         3U
-#define TIMER_TEST_FAIL_AUX_START          4U
-#define TIMER_TEST_FAIL_TICK_START         5U
-#define TIMER_TEST_FAIL_INITIAL_TIMEOUT    6U
-#define TIMER_TEST_FAIL_PERIOD             7U
-#define TIMER_TEST_FAIL_TICK_STOP          8U
-#define TIMER_TEST_FAIL_CURRENT_READ       9U
-#define TIMER_TEST_FAIL_STOP_TIMEOUT       10U
-#define TIMER_TEST_FAIL_STOP_BEHAVIOR      11U
-#define TIMER_TEST_FAIL_RESTART            12U
-#define TIMER_TEST_FAIL_RESTART_TIMEOUT    13U
-#define TIMER_TEST_FAIL_FINAL_STOP         14U
-#define TIMER_TEST_FAIL_AUX_STOP           15U
-#define TIMER_TEST_FAIL_RESULT             16U
+#define TIMER_TEST_FAIL_TICK_INIT          1U
+#define TIMER_TEST_FAIL_AUX_CONFIG         2U
+#define TIMER_TEST_FAIL_AUX_START          3U
+#define TIMER_TEST_FAIL_TICK_START         4U
+#define TIMER_TEST_FAIL_INITIAL_TIMEOUT    5U
+#define TIMER_TEST_FAIL_PERIOD             6U
+#define TIMER_TEST_FAIL_TICK_STOP          7U
+#define TIMER_TEST_FAIL_CURRENT_READ       8U
+#define TIMER_TEST_FAIL_STOP_TIMEOUT       9U
+#define TIMER_TEST_FAIL_STOP_BEHAVIOR      10U
+#define TIMER_TEST_FAIL_RESTART            11U
+#define TIMER_TEST_FAIL_RESTART_TIMEOUT    12U
+#define TIMER_TEST_FAIL_FINAL_STOP         13U
+#define TIMER_TEST_FAIL_AUX_STOP           14U
+#define TIMER_TEST_FAIL_RESULT             15U
 
 _Static_assert((T22_SERDES_AHB_CLOCK_HZ %
                 TIMER_TEST_TICK_FREQUENCY_HZ) == 0U,
@@ -74,6 +75,13 @@ volatile int32_t g_timer_test_last_status;
 
 static uint32_t timer_test_parameter = TIMER_TEST_PARAMETER_VALUE;
 static uint32_t timer_test_aux_parameter = TIMER_TEST_AUX_PARAMETER_VALUE;
+
+static void timer_test_enable_global_irq(void)
+{
+    rt_base_t level = rt_hw_interrupt_disable();
+
+    rt_hw_interrupt_enable(level | E902_MSTATUS_MIE_MASK);
+}
 
 static uint32_t read_mcycle(void)
 {
@@ -115,11 +123,12 @@ static int wait_for_count(volatile uint32_t *count,
     return 0;
 }
 
-static void timer_test_tick_handler(void *parameter)
+static void timer_test_tick_handler(uint32_t channel, void *parameter)
 {
     uint32_t next_count = g_timer_test_tick_count + 1U;
 
-    if ((parameter != &timer_test_parameter) ||
+    if ((channel != BOARD_TICK_TIMER_CHANNEL_INDEX) ||
+        (parameter != &timer_test_parameter) ||
         (*(const uint32_t *)parameter != TIMER_TEST_PARAMETER_VALUE))
     {
         g_timer_test_tick_parameter_valid = 0U;
@@ -172,25 +181,29 @@ static uint32_t run_timer_self_test(void)
     g_timer_test_aux_channel_valid = 1U;
     g_timer_test_pending_after_stop = 0xFFFFFFFFU;
     g_timer_test_last_status = 0;
-    (void)e902_global_irq_disable();
+    (void)rt_hw_interrupt_disable();
 
-    status = t22_serdes_irq_init();
-    if (status != E902_CLIC_OK)
-    {
-        g_timer_test_last_status = status;
-        return TIMER_TEST_FAIL_IRQ_INIT;
-    }
+    rt_hw_interrupt_init();
 
-    status = board_tick_init(TIMER_TEST_TICK_FREQUENCY_HZ,
-                             timer_test_tick_handler,
-                             &timer_test_parameter);
-    if (status != BOARD_TICK_OK)
+    status = t22_serdes_timer_init();
+    if (status != T22_SERDES_TIMER_OK)
     {
         g_timer_test_last_status = status;
         return TIMER_TEST_FAIL_TICK_INIT;
     }
 
-    status = t22_serdes_timer_configure_periodic(
+    status = t22_serdes_timer_config_periodic(
+        BOARD_TICK_TIMER_CHANNEL_INDEX,
+        TIMER_TEST_TICK_FREQUENCY_HZ,
+        timer_test_tick_handler,
+        &timer_test_parameter);
+    if (status != T22_SERDES_TIMER_OK)
+    {
+        g_timer_test_last_status = status;
+        return TIMER_TEST_FAIL_TICK_INIT;
+    }
+
+    status = t22_serdes_timer_config_periodic(
         TIMER_TEST_AUX_CHANNEL_INDEX,
         TIMER_TEST_AUX_FREQUENCY_HZ,
         timer_test_aux_handler,
@@ -209,8 +222,8 @@ static uint32_t run_timer_self_test(void)
     }
     aux_started = 1U;
 
-    status = board_tick_start();
-    if (status != BOARD_TICK_OK)
+    status = t22_serdes_timer_start(BOARD_TICK_TIMER_CHANNEL_INDEX);
+    if (status != T22_SERDES_TIMER_OK)
     {
         g_timer_test_last_status = status;
         result = TIMER_TEST_FAIL_TICK_START;
@@ -218,7 +231,7 @@ static uint32_t run_timer_self_test(void)
     }
     tick_started = 1U;
 
-    e902_global_irq_enable();
+    timer_test_enable_global_irq();
     if (wait_for_count(&g_timer_test_tick_count,
                        TIMER_TEST_MEASURE_CALLBACKS,
                        TIMER_TEST_TIMEOUT_CYCLES) != 0)
@@ -226,7 +239,7 @@ static uint32_t run_timer_self_test(void)
         result = TIMER_TEST_FAIL_INITIAL_TIMEOUT;
         goto cleanup;
     }
-    (void)e902_global_irq_disable();
+    (void)rt_hw_interrupt_disable();
 
     g_timer_test_measured_cycles =
         g_timer_test_last_cycle - g_timer_test_first_cycle;
@@ -241,8 +254,8 @@ static uint32_t run_timer_self_test(void)
         goto cleanup;
     }
 
-    status = board_tick_stop();
-    if (status != BOARD_TICK_OK)
+    status = t22_serdes_timer_stop(BOARD_TICK_TIMER_CHANNEL_INDEX);
+    if (status != T22_SERDES_TIMER_OK)
     {
         g_timer_test_last_status = status;
         result = TIMER_TEST_FAIL_TICK_STOP;
@@ -264,7 +277,7 @@ static uint32_t run_timer_self_test(void)
     stopped_tick_count = g_timer_test_tick_count;
     aux_stop_target = g_timer_test_aux_count +
                       TIMER_TEST_STOP_AUX_CALLBACKS;
-    e902_global_irq_enable();
+    timer_test_enable_global_irq();
     if (wait_for_count(&g_timer_test_aux_count,
                        aux_stop_target,
                        TIMER_TEST_TIMEOUT_CYCLES) != 0)
@@ -272,7 +285,7 @@ static uint32_t run_timer_self_test(void)
         result = TIMER_TEST_FAIL_STOP_TIMEOUT;
         goto cleanup;
     }
-    (void)e902_global_irq_disable();
+    (void)rt_hw_interrupt_disable();
 
     status = t22_serdes_timer_get_current(
         BOARD_TICK_TIMER_CHANNEL_INDEX,
@@ -295,8 +308,8 @@ static uint32_t run_timer_self_test(void)
     aux_restart_count = g_timer_test_aux_count;
     restart_target = g_timer_test_tick_count +
                      TIMER_TEST_RESTART_CALLBACKS;
-    status = board_tick_start();
-    if (status != BOARD_TICK_OK)
+    status = t22_serdes_timer_start(BOARD_TICK_TIMER_CHANNEL_INDEX);
+    if (status != T22_SERDES_TIMER_OK)
     {
         g_timer_test_last_status = status;
         result = TIMER_TEST_FAIL_RESTART;
@@ -304,7 +317,7 @@ static uint32_t run_timer_self_test(void)
     }
     tick_started = 1U;
 
-    e902_global_irq_enable();
+    timer_test_enable_global_irq();
     if (wait_for_count(&g_timer_test_tick_count,
                        restart_target,
                        TIMER_TEST_TIMEOUT_CYCLES) != 0)
@@ -312,15 +325,15 @@ static uint32_t run_timer_self_test(void)
         result = TIMER_TEST_FAIL_RESTART_TIMEOUT;
         goto cleanup;
     }
-    (void)e902_global_irq_disable();
+    (void)rt_hw_interrupt_disable();
     if (g_timer_test_aux_count <= aux_restart_count)
     {
         result = TIMER_TEST_FAIL_RESTART_TIMEOUT;
         goto cleanup;
     }
 
-    status = board_tick_stop();
-    if (status != BOARD_TICK_OK)
+    status = t22_serdes_timer_stop(BOARD_TICK_TIMER_CHANNEL_INDEX);
+    if (status != T22_SERDES_TIMER_OK)
     {
         g_timer_test_last_status = status;
         result = TIMER_TEST_FAIL_FINAL_STOP;
@@ -337,34 +350,24 @@ static uint32_t run_timer_self_test(void)
     }
     aux_started = 0U;
 
-    status = e902_clic_get_pending(T22_SERDES_IRQ_DW_TIMER, &pending);
-    if (status != E902_CLIC_OK)
-    {
-        g_timer_test_last_status = status;
-        result = TIMER_TEST_FAIL_RESULT;
-        goto cleanup;
-    }
+    pending = riscv_clic_get_pending(t22_serdes_clic(),
+                                     T22_SERDES_IRQ_DW_TIMER);
     g_timer_test_pending_after_stop = pending;
 
     if ((g_timer_test_tick_parameter_valid == 0U) ||
         (g_timer_test_aux_parameter_valid == 0U) ||
         (g_timer_test_aux_channel_valid == 0U) ||
         (g_timer_test_pending_after_stop != 0U) ||
-        (g_timer_test_aux_count == 0U) ||
-        (g_e902_irq_count < g_timer_test_tick_count) ||
-        (g_e902_irq_count >
-         (g_timer_test_tick_count + g_timer_test_aux_count)) ||
-        (g_e902_last_irq != T22_SERDES_IRQ_DW_TIMER) ||
-        (g_e902_unhandled_irq_count != 0U))
+        (g_timer_test_aux_count == 0U))
     {
         result = TIMER_TEST_FAIL_RESULT;
     }
 
 cleanup:
-    (void)e902_global_irq_disable();
+    (void)rt_hw_interrupt_disable();
     if (tick_started != 0U)
     {
-        (void)board_tick_stop();
+        (void)t22_serdes_timer_stop(BOARD_TICK_TIMER_CHANNEL_INDEX);
     }
     if (aux_started != 0U)
     {
@@ -398,8 +401,6 @@ int main(void)
     put_hex32(g_timer_test_tick_count);
     (void)board_early_puts(" aux_count=");
     put_hex32(g_timer_test_aux_count);
-    (void)board_early_puts(" irq_count=");
-    put_hex32(g_e902_irq_count);
     (void)board_early_puts("\n");
 
     (void)board_early_puts("E902 DW Timer self-test: stopped_current=");

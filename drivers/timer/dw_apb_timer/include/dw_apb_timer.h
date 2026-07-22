@@ -22,20 +22,16 @@ enum dw_apb_timer_mode
 struct dw_apb_timer
 {
     uintptr_t base;
-    uint32_t initialized;
-    uint32_t configured;
 };
 
 int dw_apb_timer_init(struct dw_apb_timer *timer, uintptr_t base);
 int dw_apb_timer_configure(struct dw_apb_timer *timer,
                            enum dw_apb_timer_mode mode,
                            uint32_t load_count);
-int dw_apb_timer_start(struct dw_apb_timer *timer);
-int dw_apb_timer_stop(struct dw_apb_timer *timer);
-int dw_apb_timer_get_current(const struct dw_apb_timer *timer,
-                             uint32_t *current);
-int dw_apb_timer_get_pending(const struct dw_apb_timer *timer,
-                             uint32_t *pending);
-int dw_apb_timer_acknowledge(struct dw_apb_timer *timer);
+void dw_apb_timer_start(struct dw_apb_timer *timer);
+void dw_apb_timer_stop(struct dw_apb_timer *timer);
+uint32_t dw_apb_timer_get_current(const struct dw_apb_timer *timer);
+uint32_t dw_apb_timer_get_pending(const struct dw_apb_timer *timer);
+void dw_apb_timer_acknowledge(struct dw_apb_timer *timer);
 
 #endif

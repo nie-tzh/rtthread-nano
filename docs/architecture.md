@@ -32,6 +32,7 @@ Board、SoC和CPU的内部绑定不可由命令行覆盖。构建目录保存实
 apps/                              产品应用和示例
 boards/<board>/                    板载连接、资源选择和可选启动覆盖
 drivers/                           可复用控制器驱动及RT-Thread设备适配
+drivers/interrupt/riscv_clic/      通用RISC-V CLIC寄存器驱动
 mk/                                工具链和通用构建规则
 rt-thread/src/                     RT-Thread内核
 rt-thread/components/              RT-Thread官方组件
@@ -46,10 +47,23 @@ apps -> RT-Thread API / public device API
 boards -> SoC resource API
 boards -> driver configuration -> drivers
 soc -> CPU architecture API
+CPU architecture adapter -> interrupt-controller driver
 drivers -> hardware
 ```
 
 通用驱动不能包含具体Board头文件，应用不能直接访问MMIO寄存器。
+
+## 框架优先原则
+
+实现内核适配或设备驱动前，必须先检查当前RT-Thread内核、`components/`和已有CPU port是否已经提供对应的数据结构、公共接口和生命周期。已有框架能够表达需求时，直接复用并补齐硬件适配，不再建立平行模型。例如IRQ处理表使用`struct rt_irq_desc`，设备注册使用`struct rt_device`和`rt_device_*`接口。
+
+框架复用与底层驱动分工如下：
+
+- RT-Thread已经提供对象模型时，项目代码只实现硬件操作和适配回调，不重新定义同类对象、注册表或应用接口。
+- RT-Thread Nano当前源码未携带某个完整设备子系统时，先评估引入RT-Thread官方实现；只有官方模型确实不适用时，才建立项目公共层，并记录缺失能力和边界。
+- CLIC、DW APB UART和DW APB Timer等寄存器级IP驱动负责硬件访问，不等同于新的操作系统设备模型；正式运行期接口仍应通过RT-Thread设备框架提供。
+- 早期控制台和异常停机输出发生在设备框架建立之前，可以保留最小轮询通道；正式UART设备就绪后由标准控制台接管，应用不继续依赖早期接口。
+- `rt_timer`是由系统Tick驱动的软件定时器，不能替代DW APB Timer寄存器驱动；若硬件Timer需要面向应用开放，应再适配RT-Thread硬件Timer或`rt_device`模型。
 
 ## 资源归属
 
@@ -57,9 +71,9 @@ drivers -> hardware
 
 | 信息 | 归属 | 示例 |
 | --- | --- | --- |
-| CPU架构机制 | `libcpu` | RISC-V CSR、异常入口、上下文切换 |
+| CPU架构机制 | `libcpu` | RISC-V CSR、异常入口、`mtvt/mcause`适配、上下文切换 |
 | 芯片系统集成 | `soc` | 地址空间、中断号、时钟、复位、T22 MMIO CSR写保护 |
-| 控制器操作方法 | `drivers` | DW UART、DW I2C、DW APB Timer寄存器流程 |
+| 控制器操作方法 | `drivers` | RISC-V CLIC、DW UART、DW I2C、DW APB Timer寄存器流程 |
 | 芯片引脚控制能力 | pinctrl驱动 | MFP编码、MISC偏移、ECO规则、引脚数量 |
 | 板卡资源选择 | `boards` | UART2作为控制台、TIMER1作为系统Tick时基 |
 | 板载连接 | `boards` | 引脚用途、器件地址、默认波特率 |
@@ -89,6 +103,8 @@ Board相当于静态硬件配置清单：它选择芯片已经具备的资源，
 - 芯片型号、版本和eFuse等系统信息的基础访问。
 
 UART、I2C、GPIO和pinctrl等单一控制器的寄存器流程属于`drivers/`。具体板卡启用哪些实例、采用哪些引脚状态以及连接哪些器件属于`boards/`。
+
+SoC和单一控制器的MMIO寄存器映射均为实现私有数据结构：连续、布局稳定的寄存器块使用`volatile`成员、保留区和必要的`offsetof`/`sizeof`编译期检查；业务接口不传递裸寄存器偏移。跨设备的CSR写保护仍由SoC层封装，单通道UART和DW Timer的寄存器流程仍由对应Driver负责。
 
 ## 扩展原则
 

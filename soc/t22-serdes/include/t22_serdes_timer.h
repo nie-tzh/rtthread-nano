@@ -11,15 +11,14 @@ enum t22_serdes_timer_result
     T22_SERDES_TIMER_ERROR_ARGUMENT = -1,
     T22_SERDES_TIMER_ERROR_STATE = -2,
     T22_SERDES_TIMER_ERROR_FREQUENCY = -3,
-    T22_SERDES_TIMER_ERROR_INTERRUPT = -4,
-    T22_SERDES_TIMER_ERROR_DRIVER = -5
+    T22_SERDES_TIMER_ERROR_DRIVER = -4
 };
 
 typedef void (*t22_serdes_timer_handler_t)(uint32_t channel,
                                            void *parameter);
 
 int t22_serdes_timer_init(void);
-int t22_serdes_timer_configure_periodic(
+int t22_serdes_timer_config_periodic(
     uint32_t channel,
     uint32_t frequency_hz,
     t22_serdes_timer_handler_t handler,

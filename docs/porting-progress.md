@@ -6,16 +6,18 @@
 | --- | --- | --- |
 | 1. 确认目标硬件和工具链参数 | 已完成 | 确认CPU指令集、ABI、工具链和编译参数 |
 | 2. 搭建最小编译系统 | 已完成 | 建立分层、可复现且不依赖IDE的构建系统 |
-| 3. 最小裸机启动验证 | 已完成 | 验证入口、栈、`.data`、`.bss`和C函数运行环境 |
-| 4. 板级初始化与串口输出 | 已完成 | 完成早期时钟、引脚、UART初始化和上板日志输出 |
-| 5. 建立异常与CLIC中断机制 | 已完成 | 同步异常和CLIC IRQ 3软件中断均已完成上板验证 |
-| 6. 实现DW Timer并验证周期中断 | 已完成 | T22 DW Timer周期时基和共享IRQ 27已经完成上板验证 |
-| 7. 实现E902线程栈与上下文切换 | 已完成 | RV32E线程栈、首次启动、IRQ 3延后切换和独立双线程验证均已通过目标板验证 |
-| 8. 接入RT-Thread Nano内核与系统Tick | 已完成 | 静态线程调度、时间片、延时、Idle和TIMER1系统Tick均已通过目标板验证 |
+| 3. 最小裸机启动验证 | 已完成，目标板复测通过 | 验证入口、栈、`.data`、`.bss`和C函数运行环境 |
+| 4. 板级初始化与串口输出 | 已完成，目标板复测通过 | 完成早期时钟、引脚、UART初始化和上板日志输出 |
+| 5. 建立异常与CLIC中断机制 | 已完成，目标板复测通过 | 验证同步异常、普通IRQ分发和IRQ 3专用调度入口 |
+| 6. 实现DW Timer并验证周期中断 | 已完成，目标板复测通过 | 验证T22 DW Timer周期时基和共享IRQ 27 |
+| 7. 实现E902线程栈与上下文切换 | 已完成，目标板复测通过 | 验证RV32E线程栈、首次启动、IRQ 3延后切换和独立双线程切换 |
+| 8. 接入RT-Thread Nano内核与系统Tick | 已完成，目标板复测通过 | 验证静态线程调度、时间片、延时、Idle和TIMER1系统Tick |
 | 9. 完善驱动框架与板级外设 | 未开始 | 将UART、Timer和后续板级外设接入RT-Thread Device框架 |
 | 10. 建立组件与应用开发框架 | 未开始 | 建立稳定的组件、应用和配置入口 |
 | 11. 开展功能、异常与稳定性测试 | 未开始 | 完成功能、压力、异常和长时间运行测试 |
 | 12. 完善调试支持、文档与工程交付 | 未开始 | 形成可复现的构建、调试和交付资料 |
+
+> **复测状态**：2026-08-07已完成标准IRQ框架重构后的目标板回归，异常、CLIC、DW Timer、线程上下文切换和RT-Thread调度应用均输出`PASS`，Demo双线程持续运行正常；六个应用的Debug/Release构建也全部通过。后续还需在第11阶段补充长时间运行、Tick漂移、丢Tick、压力和栈高水位测试。
 
 ## 1. 确认目标硬件和工具链参数
 
@@ -146,6 +148,8 @@ make V=1
 make clean
 ```
 
+通过WSL调用Windows原生玄铁GCC时，独立输出目录使用相对`BUILD_DIR=...`；`O=...`仍兼容纯Linux工具链。这样可以避免`O`被展开为`/mnt/...`后传给Windows工具链。
+
 默认输出目录：
 
 ```text
@@ -202,23 +206,23 @@ __stack_limit = 0x0015E000
     -> 初始化sp
     -> 从ROM复制.data到RAM
     -> 清零.bss
-    -> 调用board_init()
+    -> 调用board_early_init()
     -> 调用main()
     -> main返回后停留在死循环
 ```
 
-最小裸机阶段最初只要求进入`main()`循环；`board_init()`是在第4阶段加入的。
+最小裸机阶段最初只要求进入`main()`循环；第4阶段加入的早期板级初始化最初命名为`board_init()`，当前已改为`board_early_init()`，以区别于RT-Thread运行期的`rt_hw_board_init()`。
 
-### 3.4 调试标记
+### 3.4 历史调试方法
 
-应用使用初始化变量和零初始化变量辅助确认`.data`复制及`.bss`清零：
+最小裸机验证阶段曾使用初始化变量和零初始化变量辅助确认`.data`复制及`.bss`清零：
 
 ```c
 volatile uint32_t g_boot_marker = 0x45563930U;
 volatile uint32_t g_runtime_marker;
 ```
 
-进入`main()`后将`g_boot_marker`写入`g_runtime_marker`，可以同时验证两个数据区。
+进入`main()`后将`g_boot_marker`写入`g_runtime_marker`，可以同时验证两个数据区。该方法已经完成启动阶段验证，当前生产版`apps/demo`不再保留这些标记；需要重新核查启动代码时，可在独立裸机验证应用中临时恢复同等检查。
 
 普通C变量的地址会随源码和链接顺序变化。调试时应通过ELF符号或MAP文件定位，不再把`0x150000`、`0x150004`等地址写成固定接口。
 
@@ -226,7 +230,7 @@ volatile uint32_t g_runtime_marker;
 
 1. 将`firmware.bin`写入`0x00140000`。
 2. 复位并暂停CPU，确认PC从`0x00140000`开始执行。
-3. 在`_start`、`board_init`和`main`设置断点。
+3. 在`_start`、`board_early_init`和`main`设置断点。
 4. 确认`gp`和`sp`初始化正确。
 5. 确认`.data`内容与ROM加载镜像一致。
 6. 确认`.bss`在进入C代码前为0。
@@ -249,8 +253,8 @@ volatile uint32_t g_runtime_marker;
 
 ```text
 startup.S
-    -> board_init()
-        -> t22_serdes_soc_early_init()
+    -> board_early_init()
+        -> t22_serdes_system_init()
         -> UART2 TX引脚配置
         -> UART2复位
         -> DW APB UART初始化
@@ -300,7 +304,7 @@ startup.S
 T22 deserializer EVB booting...
 ```
 
-当前已经完成以下验证：
+前期目标板基线已经完成以下验证：
 
 - 板级代码和UART驱动参与最终链接。
 - ELF入口和内存布局保持不变。
@@ -313,50 +317,51 @@ T22 deserializer EVB booting...
 
 在接入系统Tick和线程调度前，分别验证同步异常入口和CLIC异步中断路径。该阶段拆成两个可独立验证的实现步骤。
 
-### 5.2 E902异常入口、现场诊断与验证（已完成）
+### 5.2 E902异常入口、现场诊断与验证
 
-已建立E902同步异常公共入口、RV32E现场帧和默认“诊断后停机”策略。异常自测通过独立的`e902-exception-test`应用启用，不会进入普通`demo`固件。
+已建立E902同步异常公共入口、RV32E现场帧、标准异常Hook和默认“诊断后停机”策略。异常自测在独立`e902-exception-test`应用中注册Hook，不向CPU port注入测试条件编译，也不会进入普通`demo`固件；标准IRQ框架重构后的版本已在T22解串器EVB上完成复测。
 
 已完成的验证范围：
 
 - `mtvec`以CLIC模式安装，并满足64字节对齐要求。
 - 异常入口只使用RV32E存在的`x0-x15`寄存器。
 - 能保存和恢复必要的GPR和CSR现场，并通过`mret`返回。
-- 受控32位`ebreak`触发后，可以通过早期串口观察`mcause`、`mepc`、`mtval`和恢复动作。
+- 受控32位`ebreak`触发后，测试Hook校验`mcause`、`mepc`和指令编码并批准恢复；默认未处理异常仍通过早期串口输出完整现场。
 - 自测检查`x1-x15`、`sp`、`gp`和栈哨兵，结束输出`PASS`。
 - 已完成直接下载和CKLink两种运行方式验证；CKLink方式使用硬件断点，避免与自测`ebreak`冲突。
 - 正常固件不包含主动异常测试。
 
-详细构建、运行、预期日志和失败分析见[《E902异常与CLIC验证》](e902-interrupt-validation.md)。
+详细构建、运行、实测日志和失败分析见[《E902异常与CLIC验证》](e902-interrupt-validation.md)。
 
-### 5.3 T22 CLIC初始化与软件中断验证（已完成）
+### 5.3 T22 CLIC初始化与通用分发验证
 
 当前实现包括：
 
-- E902 CPU层读取并校验`CLICINFO`，禁用全部硬件IRQ，配置并回读`mtvt`、`CLICCFG.nlbits`和`MINTTHRESH`。
+- 通用RISC-V CLIC驱动读取`CLICINFO`，禁用全部硬件IRQ并配置`CLICCFG.nlbits`；T22 SoC通过实例配置提供阈值地址和`num_interrupt=0`兼容值，E902适配层校验CPU支持的控制位范围并安装`mtvt`。
 - 建立统一的RV32E中断现场入口，保存`x1-x15`及必要CSR，通过`mcause`分发已注册处理函数并执行`mret`。
-- T22 SoC层集中定义IRQ号，提供64字节对齐、80项的`mtvt`硬件向量表和描述符表。
+- T22 SoC层持有CLIC实例并集中定义IRQ号，提供64字节对齐的80项`mtvt`硬件向量表和80项`desc`表。
 - 链接脚本保留向量段，并检查向量表对齐和精确大小。
-- 通过独立`e902-clic-test`应用配置IRQ 3为`shv=1`、正边沿触发，在最后一步打开`mstatus.MIE`。
+- 通过独立`e902-clic-test`应用配置已实现但未用于系统Tick的IRQ 7为`shv=1`、正边沿触发，在最后一步打开`mstatus.MIE`；测试配置不进入普通固件。
 - 提供直接下载和`E902 CLIC test | CKLink`两种运行入口；CKLink配置只下载并调试，不执行编译。
 
-已完成的静态检查：
+当前版本已完成的静态检查：
 
 - Debug和Release CLIC测试固件均能使用E902工具链无警告编译、链接。
 - 普通`demo`和异常自测固件完成回归构建。
 - ELF为RV32E、ILP32E，入口仍为`0x00140000`。
-- `.vectors`为64字节对齐的320字节段，80项均指向公共中断入口。
+- `.vectors`为64字节对齐的320字节段；`mtvt[3]`指向上下文切换专用入口，其余项指向普通中断入口。
 - 反汇编确认入口只访问`x0-x15`，按统一80字节现场保存和恢复CSR/GPR。
 
-上板验证结果：
+最近一次目标板基线的上板验证结果：
 
 - 实测`CLICINFO=0x00600050`，总IRQ数为80，`CLICINTCTLBITS=3`。
-- 全局中断打开前IRQ 3 pending成功锁存为1。
-- IRQ 3经`mtvt[3]`进入公共入口，`mcause.Interrupt=1`且中断号为3。
+- 原IRQ 3通用分发版本已验证全局中断打开前pending成功锁存为1，并经`mtvt[3]`进入公共入口。
 - 正边沿硬件向量中断被接受后pending自动清零，处理函数只执行一次。
 - `mret`正确返回主程序，串口输出`E902 CLIC self-test: PASS`。
 
-具体构建命令、实测日志和失败码见[《E902异常与CLIC验证》](e902-interrupt-validation.md)。第5阶段已经完成；第6阶段的DW Timer必要代码和独立验证应用也已通过目标板验证。
+为隔离IRQ 3专用调度入口，通用分发自测已迁移到T22明确实现的IRQ 7。本轮实测确认IRQ 7经普通入口、Board唯一`rt_irq_desc`表和已安装ISR完成分发并正确返回，最终输出`E902 CLIC self-test: PASS`。
+
+具体构建命令、实测日志和失败码见[《E902异常与CLIC验证》](e902-interrupt-validation.md)。第5阶段功能及标准IRQ注册、分发路径已经通过本轮目标板复测；第6阶段的DW Timer必要代码和独立验证应用也已通过复测。
 
 ## 6. 实现DW Timer并验证周期中断
 
@@ -386,22 +391,25 @@ T22 deserializer EVB booting...
 load_count = APB_CLOCK_HZ / frequency_hz
 ```
 
-当前接口要求频率能够整除200 MHz，否则返回`BOARD_TICK_ERROR_FREQUENCY`，避免静默引入累计频率误差。后续按RT-Thread默认`1000 Hz`运行时，`load_count=200000`。
+当前接口要求频率能够整除200 MHz，否则返回`T22_SERDES_TIMER_ERROR_FREQUENCY`，避免静默引入累计频率误差。后续按RT-Thread默认`1000 Hz`运行时，`load_count=200000`。
 
 ### 6.3 软件分层
 
 ```text
-Board: board_tick_init/start/stop
-    -> 固定选择TIMER1，保存系统Tick回调
+RT-Thread Board: rt_hw_tick_init()
+    -> 固定选择TIMER1，以RT_TICK_PER_SECOND配置并启动
+    -> 固定回调直接调用rt_tick_increase()
 SoC: t22_serdes_timer_*
     -> 管理8个通道、活动掩码和共享IRQ 27分发
 Driver: dw_apb_timer_*
     -> 寄存器布局、装载、周期模式、启停、状态和EOI
-CPU: e902_clic_*
-    -> CLIC属性、使能和公共中断现场
+Driver: riscv_clic_*
+    -> CLIC MMIO、属性、使能、pending和C处理函数分发
+CPU: e902_irq_* / e902_irq_entry
+    -> mtvt安装、mcause解码和公共中断现场
 ```
 
-通用驱动不知道T22基地址、IRQ号或系统Tick通道；Board层不直接访问Timer MMIO；CPU port不包含DW Timer寄存器。寄存器布局和通道步长使用编译期断言检查。
+通用驱动不知道T22基地址、IRQ号或系统Tick通道；Board层不直接访问Timer MMIO；CPU port不包含DW Timer寄存器。独立Timer验证应用直接调用SoC接口配置TIMER1和TIMER2，不链接RT-Thread板级Tick适配。寄存器布局和通道步长使用编译期断言检查。
 
 ### 6.4 共享中断处理
 
@@ -417,15 +425,17 @@ IRQ 27处理函数先读取公共状态寄存器快照，再遍历所有置位�
 初始化和启动顺序为：
 
 ```text
-t22_serdes_irq_init()
-    -> board_tick_init(frequency_hz, handler, parameter)
-    -> board_tick_start()
-    -> e902_global_irq_enable()
+rt_hw_interrupt_init()
+    -> t22_serdes_timer_init()
+    -> t22_serdes_timer_config_periodic(TIMER1/TIMER2)
+    -> t22_serdes_timer_start(TIMER2)
+    -> t22_serdes_timer_start(TIMER1)
+    -> rt_hw_interrupt_enable(saved_mstatus | E902_MSTATUS_MIE_MASK)
 ```
 
 CLIC必须先于Timer注册完成，全局中断必须在入口、回调和清源路径全部就绪后最后打开。
 
-### 6.5 验证状态
+### 6.5 阶段验收记录与当前复测状态
 
 必要代码已经完成以下静态验证：
 
@@ -435,14 +445,14 @@ CLIC必须先于Timer注册完成，全局中断必须在入口、回调和清�
 - 强制保留全部Timer公开接口完成链接，确认没有被链接垃圾回收掩盖的未定义符号。
 - ELF保持RV32E、RVC和ILP32E属性，入口及内存布局不变。
 
-独立`e902-timer-test`应用已经完成目标板验证，验证方法、日志格式和失败码见[《E902 DW Timer周期中断验证》](e902-timer-validation.md)。目标板最终输出`E902 DW Timer self-test: PASS`，确认：
+最近一次目标板基线中的独立`e902-timer-test`应用已经完成复测，验证方法、日志格式和失败码见[《E902 DW Timer周期中断验证》](e902-timer-validation.md)。目标板最终输出`E902 DW Timer self-test: PASS`，确认：
 
 - 以独立`mcycle`测量TIMER1连续100个周期，实测结果处于2%允许误差内。
 - 两个Timer通道通过共享IRQ 27均能得到分发和清源。
 - 停止TIMER1后TIMER2继续运行，TIMER1计数和回调保持不变。
 - TIMER1能够再次启动，两个通道最终停止后IRQ 27 pending为0。
 
-第6阶段已经完成，下一步进入第7阶段，实现E902线程初始栈和上下文切换。当前约130 ms的功能自测不替代第11阶段的长时间Tick漂移、丢Tick和稳定性测试。
+第6阶段功能验收已完成。独立测试通过标准板级IRQ框架调用SoC Timer接口，Debug/Release构建和目标板复测均已通过。约130 ms的功能自测不替代第11阶段的长时间Tick漂移、丢Tick和稳定性测试。
 
 ## 7. 实现E902线程栈与上下文切换
 
@@ -458,9 +468,11 @@ CLIC必须先于Timer注册完成，全局中断必须在入口、回调和清�
 x1-x15 + mepc + mstatus + mcause + mtval + reserved
 ```
 
-玄铁SDK的E902 RT-Thread参考port使用17个32位槽，只包含`x1-x15 + mepc + mstatus`。本工程保留统一的20槽现场，是因为IRQ 3继续经过现有CLIC公共入口和C分发。普通IRQ返回同一现场时恢复其中的`mcause`；IRQ 3切换线程时，`mcause`属于当前正在退出的IRQ 3，切换`sp`后必须保留当前CSR中的值，不能从目标线程现场恢复。`mtval`和`reserved`不参与普通线程调度，但保留后可与现有入口共享同一现场布局。
+玄铁SDK的E902 RT-Thread参考port使用17个32位槽，只包含`x1-x15 + mepc + mstatus`。本工程保留统一的20槽现场，使同步异常、普通IRQ和IRQ 3专用入口能够复用同一组汇编现场宏。普通IRQ返回同一现场时恢复其中的`mcause`；IRQ 3切换线程时，`mcause`属于当前正在退出的IRQ 3，切换`sp`后必须保留当前CSR中的值，不能从目标线程现场恢复。`mtval`和`reserved`不参与普通线程调度，但保留后可维持统一现场布局。
 
 `rt_hw_stack_init()`按照RT-Thread传入的栈顶地址向下构造初始现场，并设置：
+
+该接口与Cortex-M3 port保持相同调用契约：CPU port不重复检查`entry`和`stack_addr`，并允许`exit = RT_NULL`以支持信号现场；线程创建层负责保证入口和栈空间有效。
 
 - `ra = thread_exit`。
 - `sp = 对齐后的线程栈顶`。
@@ -468,7 +480,7 @@ x1-x15 + mepc + mstatus + mcause + mtval + reserved
 - `a0 = parameter`。
 - `mepc = thread_entry`。
 - `mstatus.MPP = M`、`mstatus.MPIE = 1`。
-- 初始`mcause = 0`，由`rt_hw_context_switch_to()`在第一次启动线程时装载；IRQ 3切换线程时不装载该字段。
+- 初始`mcause = 0`仅用于保持统一现场布局；首次启动和后续IRQ 3切换均不从目标线程现场装载该字段。
 
 ### 7.3 切换请求与实际切换
 
@@ -479,20 +491,23 @@ x1-x15 + mepc + mstatus + mcause + mtval + reserved
     -> 始终更新最终to字段地址
     -> 置位切换标志
     -> 设置CLICINTIP[3]
-    -> IRQ 3公共入口保存当前80字节现场
+    -> mtvt[3]进入IRQ 3专用入口并保存当前80字节现场
+    -> 不计入普通ISR嵌套，不调用普通IRQ C分发
     -> current from->sp = 当前现场地址
     -> sp = target to->sp
     -> 保留当前IRQ 3的mcause
     -> 恢复目标线程的mstatus、mepc和GPR并mret
 ```
 
+CLIC的enable、disable、set pending和clear pending采用与M3 NVIC及T22 CSI一致的无返回值契约，get pending直接返回寄存器状态。固定IRQ在配置或注册阶段完成合法性确认，寄存器操作路径信任调用者，不重复检查初始化状态和IRQ范围。CLIC MMIO采用与CMSIS和T22 CSI一致的类型化寄存器块描述，调用处通过`interrupts[irq].enable/pending/attribute/control`直接表达目标寄存器；编译期静态断言锁定寄存器偏移和4字节步长。
+
 IRQ 3尚未处理时出现新的调度请求，只更新最终`to`，不覆盖第一次记录的真实`from`。若请求发生在硬件ISR中，IRQ 3在当前`mstatus.MIE=0`期间保持pending，待硬件ISR完成`mret`后再执行实际线程切换。
 
-第一个线程不经过IRQ 3。`rt_hw_context_switch_to()`直接读取`to->sp`，装载人工构造的初始现场并通过`mret`进入线程入口。
+第一个线程同样经过IRQ 3。`rt_hw_context_switch_to()`以`from = 0`提交切换请求并开启全局中断；IRQ 3入口据此跳过启动栈SP保存，装载`to->sp`后通过与后续切换相同的`mret`路径进入线程入口。
 
-### 7.4 当前状态
+### 7.4 阶段验收记录与当前复测状态
 
-必要代码已经完成以下静态验证：
+当前版本的必要代码已经完成以下静态验证：
 
 - `demo`、异常、CLIC和DW Timer测试应用均可无警告回归构建。
 - Debug和Release工具链均能汇编新增上下文入口。
@@ -500,9 +515,9 @@ IRQ 3尚未处理时出现新的调度请求，只更新最终`to`，不覆盖�
 - 反汇编确认新增代码只访问RV32E存在的`x0-x15`。
 - ELF继续保持RV32E、RVC和ILP32E属性。
 
-独立`e902-context-switch-test`应用已经加入，验证方法、理论计数、实测日志和失败码见[《E902线程上下文切换验证》](e902-context-switch-validation.md)。该应用已经完成Debug、Release构建、严格告警、ELF和反汇编检查，并已通过目标板验证：20次调度请求合并为19次IRQ 3和19次实际切换，线程A/B寄存器检查通过，最终IRQ 3 pending为0，输出`E902 context self-test: PASS`。实测同时确认，IRQ 3切换线程时必须保留当前`mcause.MPIL`，不能从目标线程现场恢复`mcause`。
+独立`e902-context-switch-test`应用已经加入，验证方法、线程侧往返状态、预期日志和失败码见[《E902线程上下文切换验证》](e902-context-switch-validation.md)。首次启动已纳入IRQ 3统一切换路径，CPU port不再保留验证期请求和切换计数；本轮已通过线程入口、请求合并、寄存器、栈哨兵和最终pending状态复测。IRQ 3切换时必须保留当前陷阱的完整`mcause`，不能从目标线程现场恢复旧值或人工初始值。
 
-第7阶段已完成。第8阶段的RT-Thread调度器、TIMER1系统Tick和中断边界接入内容见下一节。
+第7阶段功能验收及标准IRQ框架重构后的目标板回归均已完成；第8阶段的RT-Thread调度器、TIMER1系统Tick和中断边界接入内容见下一节。
 
 ## 8. 接入RT-Thread Nano内核与系统Tick
 
@@ -521,53 +536,58 @@ clock.c + idle.c + irq.c + kservice.c
 object.c + scheduler.c + thread.c + timer.c
 ```
 
-板级`rtconfig.h`固定32级优先级、1000 Hz系统Tick、4字节ABI对齐和栈溢出检查。RT-Thread v4.1.1在当前裁剪配置下有三处配置相关的上游告警，构建文件只对对应上游对象定向关闭，不降低应用、Board和CPU port的告警级别。
+板级`rtconfig.h`固定32级优先级、1000 Hz系统Tick、4字节ABI对齐、512字节Idle栈和栈溢出检查。RT-Thread v4.1.1在当前裁剪配置下有三处配置相关的上游告警，构建文件只对对应上游对象定向关闭，不降低应用、Board和CPU port的告警级别。
 
 ### 8.3 中断边界与调度
 
-E902公共IRQ入口在保存完整现场后执行：
+E902普通IRQ入口在保存完整现场后执行：
 
 ```text
 rt_interrupt_enter()
     -> e902_irq_dispatch()
     -> rt_interrupt_leave()
-    -> 检查IRQ 3切换请求
-    -> 恢复原线程或目标线程现场
+    -> 恢复原线程现场
     -> mret
 ```
 
-`rtinterrupt.c`提供同名弱空实现，使异常、CLIC、Timer等裸机测试仍可复用公共入口；RT-Thread镜像链接`src/irq.c`后，强实现自动覆盖弱实现并维护`rt_interrupt_nest`。
+IRQ 3由`mtvt[3]`直接进入上下文切换专用入口：保存现场后检查切换请求，随后恢复原线程或切换到目标线程。该入口对标M3 PendSV，不调用`rt_interrupt_enter()`、`rt_interrupt_leave()`或`e902_irq_dispatch()`，也不注册只用于清pending的C回调。
 
-IRQ 27的板级Tick回调已经位于上述中断边界内，因此只调用一次`rt_tick_increase()`，不能再次调用`rt_interrupt_enter()`或`rt_interrupt_leave()`。若Tick使线程时间片耗尽或内核定时器唤醒更合适的线程，调度器在中断态记录切换请求；当前IRQ完成后，pending的IRQ 3执行实际SP切换。
+独立`apps/e902-test-support/rtinterrupt_stub.c`仅为CLIC、Timer等裸机验证应用提供同名弱空实现；RT-Thread镜像直接链接`src/irq.c`强实现并维护`rt_interrupt_nest`，CPU port不再携带该测试兼容代码。
+
+IRQ 27中的`rt_hw_tick_handler()`已经位于上述中断边界内，因此只调用一次`rt_tick_increase()`，不能再次调用`rt_interrupt_enter()`或`rt_interrupt_leave()`。若Tick使线程时间片耗尽或内核定时器唤醒更合适的线程，调度器在中断态记录切换请求；当前IRQ完成后，pending的IRQ 3执行实际SP切换。
 
 ### 8.4 板级接口与初始化顺序
 
-T22板级RT-Thread适配实现`rt_hw_interrupt_init()`、IRQ屏蔽、打开和普通IRQ注册。IRQ 3由上下文切换层保留，IRQ 27由DW Timer共享分发层保留，通用`rt_hw_interrupt_install()`不能覆盖这两路。普通IRQ默认按高电平触发注册；有专用触发属性的板级驱动继续使用E902 CLIC接口。
+T22板级RT-Thread适配持有唯一的80项`rt_irq_desc`表，并实现`rt_hw_interrupt_init()`、IRQ屏蔽、打开、ISR安装和普通IRQ分发。`rt_hw_interrupt_init()`在完成CLIC初始化后调用E902 port内部的`e902_context_switch_init()`，配置线程切换所使用的IRQ 3；应用层无需调用CPU私有初始化接口。IRQ 3由上下文切换层保留且不进入普通描述表分发；IRQ 27由DW Timer通过标准`rt_hw_interrupt_install()`注册，并使用标准mask/umask接口管理。当前IRQ 3、普通IRQ和DW Timer统一使用最低逻辑level；CLIC层根据`CLICINTCTLBITS`编码到`CLICINTCTL`高位。有专用触发属性或实时性要求的板级驱动可以显式选择更高逻辑level。
 
-第一版初始化顺序为：
+当前初始化顺序为：
 
 ```text
 mstatus.MIE = 0
-    -> rt_hw_interrupt_init()
+    -> rt_hw_board_init()
+        -> rt_hw_interrupt_init()
+            -> e902_context_switch_init()
+        -> t22_serdes_timer_init()
     -> rt_system_timer_init()
     -> rt_system_scheduler_init()
     -> 初始化并启动静态应用线程
     -> rt_thread_idle_init()
-    -> board_tick_init(1000 Hz)
-    -> board_tick_start()
+    -> rt_hw_tick_init()
+        -> 以RT_TICK_PER_SECOND配置TIMER1
+        -> 注册固定rt_hw_tick_handler并启动TIMER1
     -> rt_system_scheduler_start()
     -> 首线程初始现场mret后开放MIE
 ```
 
 在调度器设置`rt_current_thread`之前不能响应系统Tick，因为`rt_tick_increase()`需要访问当前线程的时间片字段。因此Timer可以预先配置和启动，但全局中断必须保持关闭，直到首次线程恢复完成。
 
-### 8.5 当前状态
+### 8.5 阶段验收记录与当前复测状态
 
-必要代码已经完成Debug、Release构建、严格告警、ELF属性和反汇编检查。RT-Thread镜像确认链接`src/irq.c`的强中断边界实现，裸机镜像仍链接弱空实现；两类镜像均保持RV32E、RVC和ILP32E属性。
+当前工作区已经完成Debug、Release构建、严格告警、ELF属性和反汇编检查。RT-Thread镜像确认链接`src/irq.c`的强中断边界实现，裸机镜像仍链接弱空实现；两类镜像均保持RV32E、RVC和ILP32E属性。
 
-独立`e902-rtthread-test`应用已经加入，验证方法、执行阶段、实测日志和失败码见[《E902 RT-Thread调度与Tick验证》](e902-rtthread-validation.md)。该应用已经完成Debug、Release构建、严格告警、ELF、强弱符号选择、反汇编检查和目标板验证。目标板实测TIMER1产生21次内核Tick、CPU port完成31次实际上下文切换，A/B时间片和延时各完成4轮，线程态中断嵌套计数为0，最终输出`E902 RT-Thread self-test: PASS`。本轮验证使用`src/irq.c`强中断边界实现，并确认公共IRQ入口在调用`rt_interrupt_enter()`后按ILP32E ABI重新装载现场参数。
+独立`e902-rtthread-test`应用已经加入，验证方法、执行阶段、实测日志和失败码见[《E902 RT-Thread调度与Tick验证》](e902-rtthread-validation.md)。本轮实测TIMER1产生21次内核Tick，A/B时间片和延时各完成4轮，线程态中断嵌套计数为0，最终输出`E902 RT-Thread self-test: PASS`。该验证使用`src/irq.c`强中断边界实现，并确认公共IRQ入口通过Board唯一`rt_irq_desc`表完成标准分发。Debug/Release构建、符号边界检查和目标板回归均已通过。
 
-第8阶段已完成。目标板已确认同优先级时间片轮转、`rt_thread_delay()`、内核Tick、Idle过渡、IRQ嵌套计数、线程栈哨兵和IRQ 3/27最终pending状态全部符合预期。下一步进入第9阶段，开始设备框架和板级驱动接入。
+第8阶段功能验收和本轮重构回归均已完成，同优先级时间片轮转、`rt_thread_delay()`、内核Tick、Idle过渡、IRQ嵌套计数、线程栈哨兵和IRQ 3/27最终pending状态均符合预期；后续工作进入第9阶段的设备框架和板级驱动接入。
 
 ## 设计边界和已知风险
 
@@ -578,4 +598,6 @@ mstatus.MIE = 0
 - 系统Tick固定使用零基通道0（TIMER1）和当前200 MHz APB时钟；后续时钟方案变化时必须同步重新计算装载值。
 - 所有DW Timer使用者必须经过共享分发层注册，不能各自覆盖IRQ 27处理函数。
 - 调度器负责选择下一个线程，E902软件中断入口负责真正保存和恢复上下文。
+- E902当前没有独立中断栈，80字节IRQ现场和ISR调用链使用被中断线程的栈；静态分析得到当前Idle最深已知Timer路径约232字节，因此Idle栈使用512字节，并在第11阶段继续做高水位和压力验证。
 - CLIC核心机制、T22中断号和外设中断源清除属于不同层次，实现时不能混为一个模块。
+- SoC层的系统级寄存器使用私有类型化寄存器块和关键偏移静态检查；单一控制器的寄存器布局由对应Driver私有持有，Board不直接访问MMIO。

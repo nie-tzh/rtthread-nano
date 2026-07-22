@@ -48,8 +48,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <rthw.h>
 
-#include "e902_context.h"
+#include "e902.h"
 
 struct context_test_registers
 {
@@ -81,8 +82,8 @@ _Static_assert(offsetof(struct context_test_registers, a5) ==
                "Context test A5 offset mismatch");
 
 void e902_context_register_self_test(
-    e902_ubase_t from,
-    e902_ubase_t to,
+    rt_ubase_t from,
+    rt_ubase_t to,
     struct context_test_registers *output);
 
 #endif

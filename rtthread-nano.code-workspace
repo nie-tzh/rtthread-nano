@@ -7,16 +7,20 @@
   ],
   "settings": {
     "search.exclude": {
+      "**/apps/{e902-clic-test,e902-context-switch-test,e902-exception-test,e902-rtthread-test,e902-test-support,e902-timer-test}/**": true,
       "**/rt-thread/libcpu/arm/**": true,
-      "**/rt-thread/libcpu/aarch64/**": true,
+      "**/rt-thread/libcpu/risc-v/{bumblebee,common,e310,k210,rv32m1}/**": true,
       "**/rt-thread/bsp/stm32f407-msh/**": true,
       "**/build/**": true
     },
     "files.exclude": {
       "**/rt-thread/bsp/stm32f407-msh": true,
+      "**/rt-thread/libcpu/arm/**": true,
+      "**/rt-thread/libcpu/risc-v/{common,bumblebee,e310,k210,rv32m1}/**": true,
+      "**/rt-thread/bsp/**": true,
     },
     "files.watcherExclude": {
-      "**/rt-thread/bsp/stm32f407-msh/**": true,
+      "**/rt-thread/bsp/stm32f407-msh/**": true
     }
   }
 }

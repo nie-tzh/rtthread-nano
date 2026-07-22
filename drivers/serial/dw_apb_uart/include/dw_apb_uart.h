@@ -27,8 +27,5 @@ struct dw_apb_uart_config
 int dw_apb_uart_init(struct dw_apb_uart *uart,
                      const struct dw_apb_uart_config *config);
 int dw_apb_uart_putc(struct dw_apb_uart *uart, char ch);
-int dw_apb_uart_write(struct dw_apb_uart *uart,
-                      const char *data,
-                      uint32_t length);
 
 #endif

@@ -9,7 +9,10 @@
 
 #if !defined(__ASSEMBLER__)
 
+struct riscv_clic;
+
 int t22_serdes_irq_init(void);
+struct riscv_clic *t22_serdes_clic(void);
 
 #endif
 

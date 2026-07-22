@@ -1,11 +1,10 @@
 E902_CPU_DIR := rt-thread/libcpu/risc-v/e902
 
-SRCS += $(E902_CPU_DIR)/clic.c \
-        $(E902_CPU_DIR)/context.c \
-        $(E902_CPU_DIR)/context_gcc.S \
-        $(E902_CPU_DIR)/exception.c \
-        $(E902_CPU_DIR)/exception_gcc.S \
-        $(E902_CPU_DIR)/interrupt_gcc.S \
-        $(E902_CPU_DIR)/rtinterrupt.c
+SRCS += $(E902_CPU_DIR)/e902_irq.c \
+        $(E902_CPU_DIR)/cpuport.c \
+        $(E902_CPU_DIR)/cpuport_gcc.S
 
-INCLUDES += $(E902_CPU_DIR)/include
+INCLUDES += rt-thread/include \
+            $(E902_CPU_DIR)
+
+DRIVER_MKS += drivers/interrupt/riscv_clic/driver.mk

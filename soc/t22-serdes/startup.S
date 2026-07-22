@@ -32,13 +32,13 @@ _start:
     la      t0, __bss_start
     la      t1, __bss_end
 .Lclear_bss:
-    bgeu    t0, t1, .Lcall_board_init
+    bgeu    t0, t1, .Lcall_board_early_init
     sw      zero, 0(t0)
     addi    t0, t0, 4
     j       .Lclear_bss
 
-.Lcall_board_init:
-    call    board_init
+.Lcall_board_early_init:
+    call    board_early_init
 
 .Lcall_main:
     call    main

@@ -11,7 +11,7 @@ SRCS += rt-thread/src/clock.c \
         rt-thread/src/scheduler.c \
         rt-thread/src/thread.c \
         rt-thread/src/timer.c \
-        $(BOARD_DIR)/rtthread.c
+        $(BOARD_DIR)/rtthread_irq.c
 
 # RT-Thread v4.1.1 has configuration-dependent warnings in these objects.
 $(BUILD_DIR)/obj/rt-thread/src/idle.o: CFLAGS += -Wno-unused-parameter

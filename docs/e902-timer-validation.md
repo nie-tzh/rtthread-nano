@@ -2,9 +2,11 @@
 
 ## 1. 验证目标
 
-本验证用于确认T22 DW APB Timer、CLIC IRQ 27、E902公共中断入口和板级Tick接口能够形成稳定的裸机周期中断闭环。验证应用与普通`demo`隔离，不调用`rt_tick_increase()`，也不改变RT-Thread内核行为。
+本验证用于确认T22 DW APB Timer、CLIC IRQ 27、E902公共中断入口和SoC Timer分发接口能够形成稳定的裸机周期中断闭环。验证应用与普通`demo`隔离，直接调用T22 Timer接口，不链接RT-Thread板级Tick适配，也不调用`rt_tick_increase()`。
 
-当前验证代码、构建检查和目标板运行均已完成，自测最终输出`PASS`，第6阶段验收完成。
+2026-08-07目标板自测最终输出`E902 DW Timer self-test: PASS`，标准IRQ框架下的共享IRQ 27分发、Debug/Release构建和第6阶段功能验收均已通过。
+
+> 本轮目标板日志确认TIMER1周期计数、TIMER2共享IRQ 27、停止隔离、重新启动和最终pending清零均符合预期；长时间漂移、丢Tick和压力测试仍属于第11阶段。
 
 | 验证项 | 目标 |
 | --- | --- |
@@ -14,7 +16,7 @@
 | 共享中断 | TIMER2以500 Hz同时运行，两个通道共用IRQ 27且均能持续回调 |
 | 停止隔离 | 停止TIMER1后，其计数值和回调次数不再变化，TIMER2仍继续中断 |
 | 再次启动 | TIMER1能够重新启动，且不影响仍在运行的TIMER2 |
-| 最终清源 | 两个通道停止后，IRQ 27 pending为0，未出现未处理IRQ |
+| 最终清源 | 两个通道停止后，IRQ 27 pending为0，停止隔离检查通过 |
 
 本测试是约130 ms的阶段性功能验证，不代替长时间漂移、丢Tick、压力和低功耗测试。
 
@@ -48,16 +50,16 @@ expected_cycles = 320000000 / 1000 * 100
 
 ## 4. 测试流程
 
-1. 保持`mstatus.MIE=0`，调用`t22_serdes_irq_init()`完成CLIC和向量表初始化。
-2. 通过`board_tick_init()`将TIMER1配置为1 kHz，并注册板级Tick回调。
-3. 通过T22 Timer接口将TIMER2配置为500 Hz，并注册辅助回调。
+1. 保持`mstatus.MIE=0`，调用`rt_hw_interrupt_init()`完成CLIC、向量表和板级RT-Thread IRQ描述表初始化。
+2. 调用`t22_serdes_timer_init()`初始化8个DW Timer通道，并通过`rt_hw_interrupt_install()`注册共享IRQ 27处理函数。
+3. 通过`t22_serdes_timer_config_periodic()`将TIMER1配置为1 kHz、TIMER2配置为500 Hz，并分别注册验证回调。
 4. 依次启动TIMER2和TIMER1，最后打开全局中断。
 5. 等待TIMER1完成101次回调，使用第1次和第101次回调时间计算100个周期的总误差。
 6. 关闭全局中断并停止TIMER1，记录其当前计数值和回调次数。
 7. 重新打开全局中断，等待TIMER2继续完成5次回调；确认TIMER1计数值和回调次数均未变化。
 8. 再次启动TIMER1，等待其继续完成20次回调，同时确认TIMER2仍在运行。
 9. 依次停止TIMER1和TIMER2，确认IRQ 27 pending为0。
-10. 检查回调参数、辅助通道号、IRQ统计和未处理IRQ计数，全部满足条件后输出`PASS`。
+10. 检查回调参数、通道号、停止后的计数和pending状态，全部满足条件后输出`PASS`。
 
 等待过程同时检查`mcycle`超时和软件循环上限，避免中断未到达或性能计数器停止时永久卡在等待循环。
 
@@ -65,43 +67,45 @@ expected_cycles = 320000000 / 1000 * 100
 
 在WSL中执行：
 
+当前通过WSL调用Windows原生玄铁GCC时，使用相对`BUILD_DIR`；`O`仍兼容纯Linux工具链。
+
 ```sh
 make BOARD=t22-deserializer-evb APP=e902-timer-test BUILD=debug \
-     O=build/t22-deserializer-evb/e902-timer-test/debug
+     BUILD_DIR=build/t22-deserializer-evb/e902-timer-test/debug
 ```
 
 直接运行时，将`firmware.bin`下载到`0x00140000`后复位，观察UART日志。
 
 使用CKLink时，先启动XuanTie DebugServer，再在VS Code中选择`E902 DW Timer test | CKLink`。该启动项只负责复位、下载和调试，不触发WSL编译，并保持普通调试断点由Debug Mode接管。
 
-## 6. 实测结果与日志格式
+## 6. 历史实测结果与当前日志格式
 
-目标板连续运行后最终输出`E902 DW Timer self-test: PASS`。周期计数和回调次数会因中断相位略有差异，日志结构为：
+目标板连续运行后应最终输出`E902 DW Timer self-test: PASS`。周期计数和回调次数会因中断相位略有差异，日志结构为：
 
 ```text
 T22 deserializer EVB booting...
 E902 DW Timer self-test: init
 E902 DW Timer self-test: tick_hz=0x000003E8 aux_hz=0x000001F4
 E902 DW Timer self-test: cycles=0x........ expected=0x01E84800 tolerance=0x0009C400
-E902 DW Timer self-test: tick_count=0x........ aux_count=0x........ irq_count=0x........
+E902 DW Timer self-test: tick_count=0x........ aux_count=0x........
 E902 DW Timer self-test: stopped_current=0x......../0x........ pending=0x00000000
 E902 DW Timer self-test: PASS
 ```
 
-本轮目标板实测日志为：
+2026-08-07目标板实测日志为：
 
 ```text
 E902 DW Timer self-test: init
 E902 DW Timer self-test: tick_hz=0x000003E8 aux_hz=0x000001F4
-E902 DW Timer self-test: cycles=0x01E848A9 expected=0x01E84800 tolerance=0x0009C400
-E902 DW Timer self-test: tick_count=0x00000079 aux_count=0x00000041 irq_count=0x000000BA
+E902 DW Timer self-test: cycles=0x01E84844 expected=0x01E84800 tolerance=0x0009C400
+E902 DW Timer self-test: tick_count=0x00000079 aux_count=0x00000041
 E902 DW Timer self-test: stopped_current=0x00000000/0x00000000 pending=0x00000000
 E902 DW Timer self-test: PASS
 ```
 
-实测周期为`32000169`个CPU周期，相对期望值`32000000`多`169`个周期。在320 MHz下对应约`0.528 us`，100 ms测量窗口的相对误差约为`0.000528%`。最终Tick回调`121`次、辅助回调`65`次，两者之和等于IRQ入口计数`186`次；停止TIMER1后两次读取的当前计数值均为0，最终IRQ pending为0。
+该次实测周期为`32000068`个CPU周期，相对期望值`32000000`多`68`个周期。在320 MHz下对应约`0.213 us`，100 ms测量窗口的相对误差约为`0.000213%`。最终TIMER1回调`121`次、辅助回调`65`次；停止TIMER1后两次读取的当前计数值均为0，最终IRQ pending为0。
 
-测试程序只有在全部判定通过时才会输出`PASS`：`cycles`位于`0x01DE8400`到`0x01F20C00`之间，`tick_count`至少为121，`aux_count`大于0，`irq_count`位于两种回调计数的合理合并范围内，两个`stopped_current`相等，最终`pending`为0，且回调参数、通道号和未处理IRQ统计均正确。因此本轮`PASS`确认了1 kHz周期精度、IRQ 27共享分发、停止隔离、再次启动和最终清源路径。
+测试程序只有在全部判定通过时才会输出`PASS`：`cycles`位于`0x01DE8400`到`0x01F20C00`之间，`tick_count`至少为121，`aux_count`大于0，两个`stopped_current`相等，最终`pending`为0，且回调参数、通道号和停止隔离状态均正确。因此本轮`PASS`确认了1 kHz周期精度、IRQ 27共享分发、停止隔离、再次启动和最终清源路径；长时间漂移和压力测试仍属于第11阶段。
 
 ## 7. 失败码
 
@@ -115,22 +119,21 @@ E902 DW Timer self-test: FAIL result=0x........ status=0x........
 
 | `result` | 失败位置 | 优先检查项 |
 | --- | --- | --- |
-| 1 | CLIC/SoC初始化 | `CLICINFO`、`mtvt`、向量表和IRQ覆盖范围 |
-| 2 | 板级Tick初始化 | Timer初始化状态、频率和TIMER1回调参数 |
-| 3 | TIMER2配置 | 通道号、500 Hz整除关系和回调注册 |
-| 4 | TIMER2启动 | 通道配置状态和IRQ 27使能 |
-| 5 | TIMER1启动 | 板级Tick状态、共享活动掩码和驱动启动 |
-| 6 | 首轮等待超时 | `mstatus.MIE`、CLIC IRQ 27、Timer装载值、公共状态和EOI |
-| 7 | 周期误差超限 | 200 MHz APB、320 MHz CPU时钟、装载值或中断延迟异常 |
-| 8 | TIMER1停止失败 | Board到SoC、Driver的停止路径 |
-| 9 | TIMER1当前值读取失败 | 通道初始化状态和当前计数寄存器 |
-| 10 | TIMER1停止后TIMER2不再中断 | 共享活动掩码错误地关闭了IRQ 27 |
-| 11 | TIMER1停止行为异常 | TIMER1仍在计数或仍调用回调 |
-| 12 | TIMER1再次启动失败 | 停止后的通道状态、EOI和活动掩码 |
-| 13 | 再次启动后等待超时 | TIMER1未恢复或TIMER2被意外停止 |
-| 14 | TIMER1最终停止失败 | Board停止路径和Timer控制寄存器 |
-| 15 | TIMER2最终停止失败 | SoC共享Timer停止路径 |
-| 16 | 最终状态不一致 | pending、回调参数、IRQ号、分发统计或未处理IRQ计数 |
+| 1 | Timer模块初始化或TIMER1配置 | IRQ 27标准安装、Timer初始化状态、频率和TIMER1回调参数 |
+| 2 | TIMER2配置 | 通道号、500 Hz整除关系和回调注册 |
+| 3 | TIMER2启动 | 通道配置状态和IRQ 27使能 |
+| 4 | TIMER1启动 | TIMER1配置状态、共享活动掩码和驱动启动 |
+| 5 | 首轮等待超时 | `mstatus.MIE`、CLIC IRQ 27、Timer装载值、公共状态和EOI |
+| 6 | 周期误差超限 | 200 MHz APB、320 MHz CPU时钟、装载值或中断延迟异常 |
+| 7 | TIMER1停止失败 | SoC到Driver的停止路径 |
+| 8 | TIMER1当前值读取失败 | 通道初始化状态和当前计数寄存器 |
+| 9 | TIMER1停止后TIMER2不再中断 | 共享活动掩码错误地关闭了IRQ 27 |
+| 10 | TIMER1停止行为异常 | TIMER1仍在计数或仍调用回调 |
+| 11 | TIMER1再次启动失败 | 停止后的通道状态、EOI和活动掩码 |
+| 12 | 再次启动后等待超时 | TIMER1未恢复或TIMER2被意外停止 |
+| 13 | TIMER1最终停止失败 | SoC停止路径和Timer控制寄存器 |
+| 14 | TIMER2最终停止失败 | SoC共享Timer停止路径 |
+| 15 | 最终状态不一致 | pending、回调参数、通道号或停止状态 |
 
 ## 8. 看门狗与调试注意事项
 
@@ -145,8 +148,8 @@ E902 DW Timer self-test: FAIL result=0x........ status=0x........
 | 内容 | 文件 |
 | --- | --- |
 | 独立Timer验证应用 | `apps/e902-timer-test/main.c` |
-| 板级Tick接口 | `boards/t22-deserializer-evb/board_tick.c` |
+| RT-Thread板级Tick适配 | `boards/t22-deserializer-evb/board.c` |
 | T22共享Timer分发 | `soc/t22-serdes/t22_serdes_timer.c` |
 | DW APB Timer通用驱动 | `drivers/timer/dw_apb_timer/dw_apb_timer.c` |
-| E902 CLIC和公共入口 | `rt-thread/libcpu/risc-v/e902/clic.c`、`interrupt_gcc.S` |
+| 通用CLIC、E902适配和公共入口 | `drivers/interrupt/riscv_clic/riscv_clic.c`、`rt-thread/libcpu/risc-v/e902/e902_irq.c`、`cpuport_gcc.S` |
 | CKLink启动配置 | `.vscode/launch.json` |

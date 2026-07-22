@@ -3,19 +3,36 @@
 
 #include <stdint.h>
 
+#define T22_SERDES_I2C0_BASE          0x00100000UL
+#define T22_SERDES_I2C1_BASE          0x00100400UL
+#define T22_SERDES_I2C2_BASE          0x00100800UL
 #define T22_SERDES_CSRAO_BASE         0x00100C00UL
+#define T22_SERDES_SPI1_M_BASE        0x00101000UL
+#define T22_SERDES_SPI1_S_BASE        0x00101400UL
+#define T22_SERDES_UART0_BASE         0x00101800UL
+#define T22_SERDES_UART1_BASE         0x00101C00UL
 #define T22_SERDES_UART2_BASE         0x00102000UL
+#define T22_SERDES_SPI_M_BASE         0x00102400UL
+#define T22_SERDES_SPI_S_BASE         0x00102800UL
+#define T22_SERDES_GPIO_BASE          0x00102C00UL
 #define T22_SERDES_CSR_BASE           0x00103000UL
-#define T22_SERDES_DW_TIMER_BASE      0x00103400UL
+#define T22_SERDES_TIMER_BASE         0x00103400UL
+#define T22_SERDES_WDT_BASE           0x00103800UL
 #define T22_SERDES_EFUSE_BASE         0x00103C00UL
+#define T22_SERDES_SRAM_BASE          0x00140000UL
+#define T22_SERDES_ROM_BASE           0x00180000UL
 #define T22_SERDES_MISC_BASE          0x0025C000UL
+#define T22_SERDES_CLIC_BASE          0xE0800000UL
+#define T22_SERDES_CLIC_MINTTHRESH_ADDR \
+    (T22_SERDES_CLIC_BASE + 0x0008U)
+#define T22_SERDES_CLIC_ZERO_IRQ_COUNT 256U
 
 #define T22_SERDES_AHB_CLOCK_HZ       320000000U
 #define T22_SERDES_APB_CLOCK_HZ       200000000U
 #define T22_SERDES_SPI_CLOCK_HZ       200000000U
 
-void t22_serdes_soc_early_init(void);
-void t22_serdes_early_uart2_tx_pin_init(void);
-void t22_serdes_early_uart2_reset(void);
+void t22_serdes_system_init(void);
+void t22_serdes_uart2_tx_pin_init(void);
+void t22_serdes_uart2_reset(void);
 
 #endif

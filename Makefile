@@ -9,7 +9,9 @@ V          ?= 0
 
 CROSS_COMPILE ?= riscv64-unknown-elf-
 
-BUILD_DIR := $(abspath $(O))
+# A command-line BUILD_DIR may stay relative when a Windows-native toolchain
+# is invoked from WSL. O remains the compatibility spelling for native builds.
+BUILD_DIR ?= $(abspath $(O))
 BOARD_DIR := boards/$(BOARD)
 APP_DIR   := apps/$(APP)
 BOARD_MK  := $(BOARD_DIR)/board.mk

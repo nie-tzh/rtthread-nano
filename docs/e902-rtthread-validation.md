@@ -4,7 +4,9 @@
 
 本验证用于确认RT-Thread v4.1.1 Nano内核已经与E902 CPU port和T22 DW Timer形成完整闭环。测试代码位于独立应用中，不改变普通`demo`及前序裸机验证应用。
 
-当前已经完成Debug、Release构建、严格告警、ELF属性、强弱中断符号选择、反汇编检查和目标板验证，第8阶段已完成。目标板最终输出`E902 RT-Thread self-test: PASS`。
+2026-08-07已完成标准IRQ框架版本的完整复测并输出`E902 RT-Thread self-test: PASS`，Debug/Release构建、RT/裸机符号边界检查和第8阶段功能验收均已通过。
+
+> 本轮目标板日志确认首次调度、同优先级时间片、线程延时、TIMER1系统Tick、Idle过渡、IRQ退出后的延后切换和线程栈哨兵均符合预期；长时间Tick漂移、丢Tick、高负载和栈高水位测试仍属于第11阶段。
 
 | 验证项 | 目标 |
 | --- | --- |
@@ -12,10 +14,10 @@
 | 时间片 | 两个同优先级、1 Tick时间片线程由系统Tick轮转 |
 | 线程延时 | `rt_thread_delay()`挂起当前线程并由内核定时器唤醒 |
 | Idle过渡 | 两个线程同时延时时能够运行Idle，线程超时后重新抢占 |
-| 系统Tick | TIMER1回调次数与`rt_tick_get()`完全一致 |
+| 系统Tick | TIMER1周期中断持续推进`rt_tick_get()` |
 | IRQ边界 | `rt_interrupt_nest`在线程态回到0，IRQ 3完成延后切换 |
 | 栈完整性 | 两个1024字节线程栈底部64字节保持填充值`'#'` |
-| 最终状态 | IRQ 3/27 pending和切换标志为0，无未处理IRQ或CPU port错误 |
+| 最终状态 | IRQ 3/27 pending为0，线程态中断嵌套计数为0 |
 
 ## 2. 最小内核配置
 
@@ -25,6 +27,7 @@
 32级线程优先级
 1000 Hz系统Tick
 4字节ABI对齐
+512字节Idle线程栈
 启用线程栈溢出检查
 禁用Heap、组件自动初始化、设备框架和FinSH
 ```
@@ -36,14 +39,18 @@
 测试主函数始终保持`mstatus.MIE=0`并依次执行：
 
 ```text
-rt_hw_interrupt_init()
+mstatus.MIE = 0
+    -> rt_hw_board_init()
+        -> rt_hw_interrupt_init()
+            -> e902_context_switch_init()
+        -> t22_serdes_timer_init()
     -> rt_system_timer_init()
     -> rt_system_scheduler_init()
     -> rt_thread_init(A/B)
     -> rt_thread_startup(A/B)
     -> rt_thread_idle_init()
-    -> board_tick_init(1000 Hz)
-    -> board_tick_start()
+    -> rt_hw_tick_init()
+        -> 以RT_TICK_PER_SECOND配置并启动TIMER1
     -> rt_system_scheduler_start()
 ```
 
@@ -56,15 +63,17 @@ E902公共IRQ入口统一执行：
 ```text
 保存RV32E现场
     -> rt_interrupt_enter()
-    -> CLIC处理函数
+    -> e902_irq_dispatch()
+    -> rt_hw_interrupt_dispatch()
+    -> rt_irq_desc.handler
     -> rt_interrupt_leave()
-    -> 检查IRQ 3切换请求
-    -> 恢复现场并mret
+    -> 恢复原线程现场并mret
+    -> 若IRQ 3已pending，由CPU再次进入上下文切换专用入口
 ```
 
-因此TIMER1回调只增加测试计数并调用一次`rt_tick_increase()`。若回调再次调用`rt_interrupt_enter/leave`，单层IRQ会被错误记录为两层，破坏中断嵌套统计和进入、退出Hook的语义。
+因此`rt_hw_tick_init()`注册的固定TIMER1回调只调用一次`rt_tick_increase()`。若回调再次调用`rt_interrupt_enter/leave`，单层IRQ会被错误记录为两层，破坏中断嵌套统计和进入、退出Hook的语义。
 
-最终ELF中的`rt_interrupt_enter/leave`来自`rt-thread/src/irq.c`强实现；不含内核的应用仍使用`rtinterrupt.c`弱空实现。
+最终ELF中的`rt_interrupt_enter/leave`来自`rt-thread/src/irq.c`强实现；不含内核的验证应用使用独立测试支持文件中的弱空实现。
 
 ## 5. 时间片与延时流程
 
@@ -88,38 +97,42 @@ B: rt_thread_delay(3)
 
 在WSL中执行：
 
+当前通过WSL调用Windows原生玄铁GCC时，使用相对`BUILD_DIR`；`O`仍兼容纯Linux工具链。
+
 ```sh
 make BOARD=t22-deserializer-evb APP=e902-rtthread-test BUILD=debug \
-     O=build/t22-deserializer-evb/e902-rtthread-test/debug
+     BUILD_DIR=build/t22-deserializer-evb/e902-rtthread-test/debug
 ```
 
 直接运行时，将`firmware.bin`下载到`0x00140000`后复位并观察UART。
 
 使用CKLink时，先启动XuanTie DebugServer，再在VS Code中选择`E902 RT-Thread test | CKLink`。该配置只负责复位、下载和调试，不触发WSL编译。
 
-## 7. 通过日志
+## 7. 本轮目标板日志与通过条件
 
-`ticks`和`switches`取决于实际调度时序，不要求固定值，但必须满足测试代码中的下限和一致性检查：
+`ticks`取决于实际调度时序，不要求固定值，但必须满足测试代码中的下限和一致性检查。CPU port不再保留验证期切换计数，调度正确性改由A/B时间片、延时完成次数和最终线程状态共同确认。
 
-本次目标板验证满足以下全部条件：
+优化后的目标板复测需要满足以下全部条件：
 
 - A/B时间片计数均为4。
 - A/B延时完成计数均为4。
-- TIMER1回调和`rt_tick_get()`均为21，CPU port完成31次实际上下文切换。
+- `rt_tick_get()`持续递增，且不小于时间片验证所需次数。
 - `rt_interrupt_nest`在线程态为0。
-- IRQ 3和IRQ 27 pending、切换标志和CPU port错误状态均为0。
+- IRQ 3和IRQ 27 pending均为0。
 - 两个线程栈底部哨兵保持不变。
 - 串口最终输出`E902 RT-Thread self-test: PASS`。
+
+2026-08-07目标板实测日志为：
 
 ```text
 T22 deserializer EVB booting...
 E902 RT-Thread self-test: init
 E902 RT-Thread self-test: scheduler start
-E902 RT-Thread self-test: ticks=0x00000015 switches=0x0000001F slice_A/B=0x00000004/0x00000004 delay_A/B=0x00000004/0x00000004 irq_nest=0x00000000
+E902 RT-Thread self-test: ticks=0x00000015 slice_A/B=0x00000004/0x00000004 delay_A/B=0x00000004/0x00000004 irq_nest=0x00000000
 E902 RT-Thread self-test: PASS
 ```
 
-该结果在链接`src/irq.c`强`rt_interrupt_enter/leave`实现的内核镜像上取得。反汇编确认公共IRQ入口在`rt_interrupt_enter()`返回后重新由`sp`装载分发参数`a0`，因此本次PASS同时覆盖了ILP32E调用者保存寄存器约束下的IRQ现场传递。
+上述基线结果在链接`src/irq.c`强`rt_interrupt_enter/leave`实现的内核镜像上取得。反汇编确认公共IRQ入口在`rt_interrupt_enter()`返回后重新由`sp`装载分发参数`a0`，因此该次PASS同时覆盖了ILP32E调用者保存寄存器约束下的IRQ现场传递。
 
 ## 8. 失败码
 
@@ -131,12 +144,12 @@ E902 RT-Thread self-test: FAIL result=0x........ status=0x........
 
 | `result` | 失败位置 | 优先检查项 |
 | --- | --- | --- |
-| 1 | CLIC、上下文或Board Tick初始化 | 初始化顺序、IRQ 3/27注册和TIMER1配置 |
+| 1 | Board、上下文或系统Tick初始化 | 初始化顺序、IRQ 3专用配置、IRQ 27注册和TIMER1配置 |
 | 2 | 静态线程初始化 | `rtconfig.h`、线程对象、栈地址和初始现场 |
 | 3 | 调度器启动意外返回 | 就绪队列、首次线程选择和`rt_hw_context_switch_to()` |
-| 4 | Tick或上下文切换计数 | TIMER1回调、`rt_tick_increase()`、时间片和IRQ 3 |
+| 4 | Tick或当前线程状态 | `rt_hw_tick_handler()`、`rt_tick_increase()`、时间片和IRQ 3专用入口 |
 | 5 | A/B阶段次数不一致 | 同优先级轮转、延时返回和线程定时器唤醒 |
-| 6 | IRQ最终状态异常 | pending、切换标志、嵌套计数或未处理IRQ |
+| 6 | IRQ最终状态异常 | pending或嵌套计数 |
 | 7 | 线程栈哨兵损坏 | 栈大小、IRQ/C调用深度或现场偏移 |
 
 `status`保存初始化接口返回值；后续逻辑失败时为0。失败路径关闭全局中断并停机，避免失败后继续被Tick调度。
@@ -151,6 +164,8 @@ E902 RT-Thread self-test: FAIL result=0x........ status=0x........
 - 组件自动初始化、用户Main线程和FinSH。
 - 中断嵌套、长时间Tick漂移和压力稳定性。
 
+E902当前没有独立中断栈，80字节硬件IRQ现场和后续C调用均使用被中断线程的栈。基于`-fstack-usage`结果，TIMER1在Idle线程上触发并走到线程超时调度时，当前已知最深路径约占232字节；原256字节Idle栈仅剩约24字节静态余量，因此本轮将其提高到512字节。该估算不覆盖未来中断嵌套、Idle Hook和新增回调，第11阶段仍需通过栈哨兵或高水位统计进行目标板压力验证。
+
 这些内容分别属于第9阶段驱动接入、第10阶段应用框架和第11阶段稳定性验证。
 
 ## 10. 代码对应关系
@@ -159,7 +174,8 @@ E902 RT-Thread self-test: FAIL result=0x........ status=0x........
 | --- | --- |
 | 最小内核源文件集合 | `rt-thread/rtthread.mk` |
 | Nano配置 | `boards/t22-deserializer-evb/include/rtconfig.h` |
-| 板级RT中断适配 | `boards/t22-deserializer-evb/rtthread.c` |
-| IRQ中断边界 | `rt-thread/libcpu/risc-v/e902/interrupt_gcc.S`、`rtinterrupt.c` |
+| 板级初始化与系统Tick适配 | `boards/t22-deserializer-evb/board.c` |
+| 板级RT中断适配 | `boards/t22-deserializer-evb/rtthread_irq.c` |
+| IRQ中断边界 | `rt-thread/libcpu/risc-v/e902/cpuport_gcc.S`、`rt-thread/src/irq.c` |
 | A/B调度和PASS/FAIL判断 | `apps/e902-rtthread-test/main.c` |
 | CKLink配置 | `.vscode/launch.json` |

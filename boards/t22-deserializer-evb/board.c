@@ -1,10 +1,18 @@
+#include <rthw.h>
+#include <rtthread.h>
+
 #include "board.h"
 #include "dw_apb_uart.h"
-#include "e902_exception.h"
+#include "e902.h"
 #include "t22_serdes.h"
+#include "t22_serdes_timer.h"
 
 #define BOARD_UART_BAUD_RATE     115200U
 #define BOARD_UART_POLL_LIMIT    1000000U
+
+_Static_assert(BOARD_TICK_TIMER_CHANNEL_INDEX <
+               T22_SERDES_DW_TIMER_CHANNEL_COUNT,
+               "RT-Thread Tick channel is outside the T22 timer block");
 
 static struct dw_apb_uart board_uart;
 static int board_uart_ready;
@@ -16,20 +24,49 @@ static const struct dw_apb_uart_config board_uart_config =
     .poll_limit = BOARD_UART_POLL_LIMIT
 };
 
-static void board_early_uart_init(void)
+static void board_early_console_init(void)
 {
-    t22_serdes_early_uart2_tx_pin_init();
-    t22_serdes_early_uart2_reset();
+    t22_serdes_uart2_tx_pin_init();
+    t22_serdes_uart2_reset();
 
     board_uart_ready =
         (dw_apb_uart_init(&board_uart, &board_uart_config) == DW_APB_UART_OK);
-    e902_exception_set_output_ready(board_uart_ready);
 }
 
-void board_init(void)
+void board_early_init(void)
 {
-    t22_serdes_soc_early_init();
-    board_early_uart_init();
+    t22_serdes_system_init();
+    board_early_console_init();
+}
+
+static void rt_hw_tick_handler(uint32_t channel, void *parameter)
+{
+    (void)channel;
+    (void)parameter;
+    rt_tick_increase();
+}
+
+void rt_hw_board_init(void)
+{
+    rt_hw_interrupt_init();
+    t22_serdes_timer_init();
+}
+
+int rt_hw_tick_init(void)
+{
+    int result;
+
+    result = t22_serdes_timer_config_periodic(
+        BOARD_TICK_TIMER_CHANNEL_INDEX,
+        RT_TICK_PER_SECOND,
+        rt_hw_tick_handler,
+        0);
+    if (result != T22_SERDES_TIMER_OK)
+    {
+        return result;
+    }
+
+    return t22_serdes_timer_start(BOARD_TICK_TIMER_CHANNEL_INDEX);
 }
 
 int board_early_putc(char ch)
@@ -76,8 +113,5 @@ int board_early_puts(const char *text)
 
 void e902_exception_putchar(char ch)
 {
-    if (board_early_putc(ch) != DW_APB_UART_OK)
-    {
-        e902_exception_set_output_ready(0);
-    }
+    (void)board_early_putc(ch);
 }

@@ -1,4 +1,5 @@
 #include "context_self_test.h"
+#include "e902.h"
 
     .section .text.context_test, "ax", @progbits
     .balign 4
@@ -35,8 +36,7 @@ e902_context_register_self_test:
     li   a4, CONTEXT_TEST_MARKER_A4
     li   a5, CONTEXT_TEST_MARKER_A5
 
-    fence iorw, iorw
-    csrsi mstatus, 8
+    csrsi mstatus, E902_MSTATUS_MIE_MASK
     nop
     nop
     nop

@@ -16,10 +16,6 @@ static uint8_t demo_thread_5ms_stack[DEMO_THREAD_STACK_SIZE]
 static uint8_t demo_thread_10ms_stack[DEMO_THREAD_STACK_SIZE]
     __attribute__((aligned(16)));
 
-volatile uint32_t g_boot_marker = 0x45563930U;
-volatile uint32_t g_runtime_marker;
-volatile int32_t g_uart_status = -1;
-
 static void demo_halt(const char *reason) __attribute__((noreturn));
 
 static void demo_halt(const char *reason)
@@ -31,12 +27,6 @@ static void demo_halt(const char *reason)
     {
         __asm__ volatile ("nop");
     }
-}
-
-static void demo_tick_callback(void *parameter)
-{
-    (void)parameter;
-    rt_tick_increase();
 }
 
 static void demo_thread_5ms_entry(void *parameter)
@@ -64,13 +54,12 @@ static void demo_thread_10ms_entry(void *parameter)
 int main(void)
 {
     rt_err_t result;
-    int tick_status;
+    int status;
 
-    g_runtime_marker = g_boot_marker;
-    g_uart_status = board_early_puts("T22 deserializer EVB booting...\n");
+    (void)board_early_puts("T22 deserializer EVB booting...\n");
 
     (void)rt_hw_interrupt_disable();
-    rt_hw_interrupt_init();
+    rt_hw_board_init();
     rt_system_timer_init();
     rt_system_scheduler_init();
 
@@ -104,18 +93,10 @@ int main(void)
     (void)rt_thread_startup(&demo_thread_10ms);
     rt_thread_idle_init();
 
-    tick_status = board_tick_init(RT_TICK_PER_SECOND,
-                                  demo_tick_callback,
-                                  0);
-    if (tick_status != BOARD_TICK_OK)
+    status = rt_hw_tick_init();
+    if (status != 0)
     {
         demo_halt("RT-Thread Tick init failed\n");
-    }
-
-    tick_status = board_tick_start();
-    if (tick_status != BOARD_TICK_OK)
-    {
-        demo_halt("RT-Thread Tick start failed\n");
     }
 
     (void)board_early_puts("RT-Thread demo scheduler start\n");

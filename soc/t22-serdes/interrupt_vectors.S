@@ -7,8 +7,13 @@
     .type t22_serdes_irq_vectors, @object
 
 t22_serdes_irq_vectors:
-    /* The common entry dispatches each vector by mcause.ExceptionCode. */
-    .rept T22_SERDES_IRQ_VECTOR_COUNT
+    /* IRQ 3 owns the deferred context-switch entry; other IRQs dispatch. */
+    .rept T22_SERDES_IRQ_MACHINE_SOFTWARE
+    .word e902_irq_entry
+    .endr
+    .word e902_context_switch_entry
+    .rept (T22_SERDES_IRQ_VECTOR_COUNT - \
+           T22_SERDES_IRQ_MACHINE_SOFTWARE - 1)
     .word e902_irq_entry
     .endr
 t22_serdes_irq_vectors_end:

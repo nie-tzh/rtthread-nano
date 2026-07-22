@@ -31,22 +31,6 @@ _Static_assert(sizeof(struct dw_apb_timer_registers) ==
                DW_APB_TIMER_CHANNEL_STRIDE,
                "DW APB Timer channel stride mismatch");
 
-static struct dw_apb_timer_registers *timer_get_registers(
-    const struct dw_apb_timer *timer)
-{
-    return (struct dw_apb_timer_registers *)timer->base;
-}
-
-static void timer_fence(void)
-{
-    __asm__ volatile ("fence iorw, iorw" ::: "memory");
-}
-
-static int timer_is_initialized(const struct dw_apb_timer *timer)
-{
-    return (timer != 0) && (timer->initialized != 0U);
-}
-
 int dw_apb_timer_init(struct dw_apb_timer *timer, uintptr_t base)
 {
     struct dw_apb_timer_registers *registers;
@@ -58,14 +42,12 @@ int dw_apb_timer_init(struct dw_apb_timer *timer, uintptr_t base)
     }
 
     timer->base = base;
-    timer->initialized = 1U;
-    timer->configured = 0U;
-    registers = timer_get_registers(timer);
+    registers =
+        (struct dw_apb_timer_registers *)(uintptr_t)timer->base;
 
     registers->control = DW_APB_TIMER_CONTROL_INTERRUPT_MASK;
     eoi = registers->eoi;
     (void)eoi;
-    timer_fence();
 
     return DW_APB_TIMER_OK;
 }
@@ -85,12 +67,13 @@ int dw_apb_timer_configure(struct dw_apb_timer *timer,
     {
         return DW_APB_TIMER_ERROR_ARGUMENT;
     }
-    if (!timer_is_initialized(timer))
+    if (timer->base == 0U)
     {
         return DW_APB_TIMER_ERROR_STATE;
     }
 
-    registers = timer_get_registers(timer);
+    registers =
+        (struct dw_apb_timer_registers *)(uintptr_t)timer->base;
     registers->control = DW_APB_TIMER_CONTROL_INTERRUPT_MASK;
     if (mode == DW_APB_TIMER_MODE_PERIODIC)
     {
@@ -98,28 +81,18 @@ int dw_apb_timer_configure(struct dw_apb_timer *timer,
     }
     registers->load_count = load_count;
     registers->control = control;
-    timer->configured = 1U;
-    timer_fence();
 
     return DW_APB_TIMER_OK;
 }
 
-int dw_apb_timer_start(struct dw_apb_timer *timer)
+void dw_apb_timer_start(struct dw_apb_timer *timer)
 {
     struct dw_apb_timer_registers *registers;
     uint32_t eoi;
     uint32_t control;
 
-    if (timer == 0)
-    {
-        return DW_APB_TIMER_ERROR_ARGUMENT;
-    }
-    if (!timer_is_initialized(timer) || (timer->configured == 0U))
-    {
-        return DW_APB_TIMER_ERROR_STATE;
-    }
-
-    registers = timer_get_registers(timer);
+    registers =
+        (struct dw_apb_timer_registers *)(uintptr_t)timer->base;
     eoi = registers->eoi;
     (void)eoi;
 
@@ -127,86 +100,45 @@ int dw_apb_timer_start(struct dw_apb_timer *timer)
     control &= ~DW_APB_TIMER_CONTROL_INTERRUPT_MASK;
     control |= DW_APB_TIMER_CONTROL_ENABLE;
     registers->control = control;
-    timer_fence();
-
-    return DW_APB_TIMER_OK;
 }
 
-int dw_apb_timer_stop(struct dw_apb_timer *timer)
+void dw_apb_timer_stop(struct dw_apb_timer *timer)
 {
     struct dw_apb_timer_registers *registers;
     uint32_t eoi;
     uint32_t control;
 
-    if (timer == 0)
-    {
-        return DW_APB_TIMER_ERROR_ARGUMENT;
-    }
-    if (!timer_is_initialized(timer))
-    {
-        return DW_APB_TIMER_ERROR_STATE;
-    }
-
-    registers = timer_get_registers(timer);
+    registers =
+        (struct dw_apb_timer_registers *)(uintptr_t)timer->base;
     control = registers->control | DW_APB_TIMER_CONTROL_INTERRUPT_MASK;
     registers->control = control;
     registers->control = control & ~DW_APB_TIMER_CONTROL_ENABLE;
     eoi = registers->eoi;
     (void)eoi;
-    timer_fence();
-
-    return DW_APB_TIMER_OK;
 }
 
-int dw_apb_timer_get_current(const struct dw_apb_timer *timer,
-                             uint32_t *current)
+uint32_t dw_apb_timer_get_current(const struct dw_apb_timer *timer)
 {
-    if ((timer == 0) || (current == 0))
-    {
-        return DW_APB_TIMER_ERROR_ARGUMENT;
-    }
-    if (!timer_is_initialized(timer))
-    {
-        return DW_APB_TIMER_ERROR_STATE;
-    }
+    const struct dw_apb_timer_registers *registers =
+        (const struct dw_apb_timer_registers *)(uintptr_t)timer->base;
 
-    *current = timer_get_registers(timer)->current_value;
-    return DW_APB_TIMER_OK;
+    return registers->current_value;
 }
 
-int dw_apb_timer_get_pending(const struct dw_apb_timer *timer,
-                             uint32_t *pending)
+uint32_t dw_apb_timer_get_pending(const struct dw_apb_timer *timer)
 {
-    if ((timer == 0) || (pending == 0))
-    {
-        return DW_APB_TIMER_ERROR_ARGUMENT;
-    }
-    if (!timer_is_initialized(timer))
-    {
-        return DW_APB_TIMER_ERROR_STATE;
-    }
+    const struct dw_apb_timer_registers *registers =
+        (const struct dw_apb_timer_registers *)(uintptr_t)timer->base;
 
-    *pending = timer_get_registers(timer)->interrupt_status &
-               DW_APB_TIMER_PENDING;
-    return DW_APB_TIMER_OK;
+    return registers->interrupt_status & DW_APB_TIMER_PENDING;
 }
 
-int dw_apb_timer_acknowledge(struct dw_apb_timer *timer)
+void dw_apb_timer_acknowledge(struct dw_apb_timer *timer)
 {
+    const struct dw_apb_timer_registers *registers =
+        (const struct dw_apb_timer_registers *)(uintptr_t)timer->base;
     uint32_t eoi;
 
-    if (timer == 0)
-    {
-        return DW_APB_TIMER_ERROR_ARGUMENT;
-    }
-    if (!timer_is_initialized(timer))
-    {
-        return DW_APB_TIMER_ERROR_STATE;
-    }
-
-    eoi = timer_get_registers(timer)->eoi;
+    eoi = registers->eoi;
     (void)eoi;
-    timer_fence();
-
-    return DW_APB_TIMER_OK;
 }
