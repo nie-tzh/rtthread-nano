@@ -26,6 +26,8 @@ struct dw_apb_uart_config
 
 int dw_apb_uart_init(struct dw_apb_uart *uart,
                      const struct dw_apb_uart_config *config);
+int dw_apb_uart_wait_tx_idle(struct dw_apb_uart *uart);
 int dw_apb_uart_putc(struct dw_apb_uart *uart, char ch);
+int dw_apb_uart_getc(struct dw_apb_uart *uart);
 
 #endif

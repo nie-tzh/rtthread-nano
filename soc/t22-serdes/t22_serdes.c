@@ -20,12 +20,6 @@ struct t22_serdes_csr_registers
     volatile uint32_t mfp_mode1;
 };
 
-struct t22_serdes_efuse_registers
-{
-    uint32_t reserved0[EFUSE_SOFTWARE_WORD1_OFFSET / sizeof(uint32_t)];
-    const volatile uint32_t software_word1;
-};
-
 struct t22_serdes_misc_registers
 {
     uint32_t reserved0[DESERIALIZER_MFP14_CONFIG_OFFSET /
@@ -49,9 +43,6 @@ _Static_assert(offsetof(struct t22_serdes_csr_registers, mfp_control) ==
 _Static_assert(offsetof(struct t22_serdes_csr_registers, mfp_mode1) ==
                CSR_MFP_MODE1_OFFSET,
                "T22 CSR MFP-mode1 offset mismatch");
-_Static_assert(offsetof(struct t22_serdes_efuse_registers,
-                        software_word1) == EFUSE_SOFTWARE_WORD1_OFFSET,
-               "T22 EFUSE software-word1 offset mismatch");
 _Static_assert(offsetof(struct t22_serdes_misc_registers, mfp14_config) ==
                DESERIALIZER_MFP14_CONFIG_OFFSET,
                "T22 MISC MFP14 offset mismatch");
@@ -66,8 +57,6 @@ _Static_assert(offsetof(struct t22_serdes_misc_registers, pll_config19) ==
     ((struct t22_serdes_csrao_registers *)(uintptr_t)T22_SERDES_CSRAO_BASE)
 #define T22_SERDES_CSR \
     ((struct t22_serdes_csr_registers *)(uintptr_t)T22_SERDES_CSR_BASE)
-#define T22_SERDES_EFUSE \
-    ((const struct t22_serdes_efuse_registers *)(uintptr_t)T22_SERDES_EFUSE_BASE)
 #define T22_SERDES_MISC \
     ((struct t22_serdes_misc_registers *)(uintptr_t)T22_SERDES_MISC_BASE)
 
@@ -107,21 +96,12 @@ void t22_serdes_system_init(void)
 
 void t22_serdes_uart2_tx_pin_init(void)
 {
-    uint32_t efuse_word1 =
-        T22_SERDES_EFUSE->software_word1;
-    uint32_t uart2_tx_config = DESERIALIZER_UART2_TX_CONFIG;
-
     csr_update32(&T22_SERDES_CSR->mfp_mode1,
                  DESERIALIZER_MFP14_MODE_MASK,
                  DESERIALIZER_MFP14_MODE_UART2_TX);
 
-    /* Older silicon requires the MFP14 TX-enable ECO inversion. */
-    if ((efuse_word1 & EFUSE_ECO_UPDATED) == 0U)
-    {
-        uart2_tx_config ^= DESERIALIZER_MFP14_ECO_MASK;
-    }
-
-    T22_SERDES_MISC->mfp14_config = uart2_tx_config;
+    /* T22 production parts use the eFuse=0 MFP14 ECO polarity. */
+    T22_SERDES_MISC->mfp14_config = DESERIALIZER_UART2_TX_CONFIG;
     csr_update32(&T22_SERDES_CSR->mfp_control,
                  CSR_MFP_SOFTWARE_CONTROL,
                  CSR_MFP_SOFTWARE_CONTROL);

@@ -9,6 +9,7 @@
 #define RT_USING_DEVICE_OPS
 #define RT_USING_CONSOLE
 #define RT_CONSOLEBUF_SIZE      128
+#define BSP_USING_EARLY_CONSOLE
 /* IRQ frames and ISR call chains use the interrupted thread's stack. */
 #define IDLE_THREAD_STACK_SIZE  512
 #define RT_USING_OVERFLOW_CHECK

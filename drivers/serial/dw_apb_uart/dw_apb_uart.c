@@ -9,7 +9,9 @@
 #define UART_LCR_WORD_LEN_8      (3U << 0)
 #define UART_LCR_DLAB            (1U << 7)
 
+#define UART_LSR_DATA_READY      (1U << 0)
 #define UART_LSR_THRE            (1U << 5)
+#define UART_LSR_TEMT            (1U << 6)
 #define UART_USR_BUSY            (1U << 0)
 
 struct dw_apb_uart_registers
@@ -146,4 +148,47 @@ int dw_apb_uart_putc(struct dw_apb_uart *uart, char ch)
 
     registers->data.transmit_holding = (uint8_t)ch;
     return DW_APB_UART_OK;
+}
+
+int dw_apb_uart_wait_tx_idle(struct dw_apb_uart *uart)
+{
+    struct dw_apb_uart_registers *registers;
+    uint32_t remaining;
+
+    if ((uart == 0) || (uart->base == 0U) || (uart->poll_limit == 0U))
+    {
+        return DW_APB_UART_ERROR_INVALID;
+    }
+
+    registers =
+        (struct dw_apb_uart_registers *)(uintptr_t)uart->base;
+    remaining = uart->poll_limit;
+    while ((registers->line_status & UART_LSR_TEMT) == 0U)
+    {
+        if (remaining-- == 0U)
+        {
+            return DW_APB_UART_ERROR_TIMEOUT;
+        }
+    }
+
+    return DW_APB_UART_OK;
+}
+
+int dw_apb_uart_getc(struct dw_apb_uart *uart)
+{
+    const struct dw_apb_uart_registers *registers;
+
+    if ((uart == 0) || (uart->base == 0U))
+    {
+        return -1;
+    }
+
+    registers =
+        (const struct dw_apb_uart_registers *)(uintptr_t)uart->base;
+    if ((registers->line_status & UART_LSR_DATA_READY) == 0U)
+    {
+        return -1;
+    }
+
+    return (int)(registers->data.receive_buffer & 0xFFU);
 }
