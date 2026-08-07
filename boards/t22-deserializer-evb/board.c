@@ -69,7 +69,7 @@ int rt_hw_tick_init(void)
     return t22_serdes_timer_start(BOARD_TICK_TIMER_CHANNEL_INDEX);
 }
 
-int board_early_putc(char ch)
+static int board_console_putc(char ch)
 {
     int result;
 
@@ -90,28 +90,23 @@ int board_early_putc(char ch)
     return dw_apb_uart_putc(&board_uart, ch);
 }
 
-int board_early_puts(const char *text)
+void rt_hw_console_output(const char *text)
 {
-    int result;
-
     if (text == 0)
     {
-        return DW_APB_UART_ERROR_INVALID;
+        return;
     }
 
     while (*text != '\0')
     {
-        result = board_early_putc(*text++);
-        if (result != DW_APB_UART_OK)
+        if (board_console_putc(*text++) != DW_APB_UART_OK)
         {
-            return result;
+            return;
         }
     }
-
-    return DW_APB_UART_OK;
 }
 
 void e902_exception_putchar(char ch)
 {
-    (void)board_early_putc(ch);
+    (void)board_console_putc(ch);
 }

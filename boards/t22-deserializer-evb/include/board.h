@@ -8,7 +8,5 @@
 void board_early_init(void);
 void rt_hw_board_init(void);
 int rt_hw_tick_init(void);
-int board_early_putc(char ch);
-int board_early_puts(const char *text);
 
 #endif

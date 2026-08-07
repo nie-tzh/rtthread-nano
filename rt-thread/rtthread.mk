@@ -4,6 +4,7 @@ RTTHREAD_CONFIG := $(BOARD_DIR)/include/rtconfig.h
 INCLUDES += rt-thread/include
 
 SRCS += rt-thread/src/clock.c \
+        rt-thread/src/device.c \
         rt-thread/src/idle.c \
         rt-thread/src/irq.c \
         rt-thread/src/kservice.c \
@@ -15,6 +16,7 @@ SRCS += rt-thread/src/clock.c \
 
 # RT-Thread v4.1.1 has configuration-dependent warnings in these objects.
 $(BUILD_DIR)/obj/rt-thread/src/idle.o: CFLAGS += -Wno-unused-parameter
-$(BUILD_DIR)/obj/rt-thread/src/kservice.o: CFLAGS += -Wno-implicit-fallthrough
+$(BUILD_DIR)/obj/rt-thread/src/kservice.o: CFLAGS += \
+    -Wno-implicit-fallthrough -Wno-unused-parameter
 $(BUILD_DIR)/obj/rt-thread/src/thread.o: CFLAGS += \
     -Wno-unused-parameter -Wno-maybe-uninitialized

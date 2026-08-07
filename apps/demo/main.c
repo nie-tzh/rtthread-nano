@@ -21,7 +21,7 @@ static void demo_halt(const char *reason) __attribute__((noreturn));
 static void demo_halt(const char *reason)
 {
     (void)rt_hw_interrupt_disable();
-    (void)board_early_puts(reason);
+    rt_kputs(reason);
 
     for (;;)
     {
@@ -35,7 +35,7 @@ static void demo_thread_5ms_entry(void *parameter)
 
     for (;;)
     {
-        (void)board_early_puts("demo: task5\n");
+        rt_kputs("demo: task5\n");
         (void)rt_thread_mdelay(5);
     }
 }
@@ -46,7 +46,7 @@ static void demo_thread_10ms_entry(void *parameter)
 
     for (;;)
     {
-        (void)board_early_puts("demo: task10\n");
+        rt_kputs("demo: task10\n");
         (void)rt_thread_mdelay(10);
     }
 }
@@ -56,7 +56,7 @@ int main(void)
     rt_err_t result;
     int status;
 
-    (void)board_early_puts("T22 deserializer EVB booting...\n");
+    rt_kputs("T22 deserializer EVB booting...\n");
 
     (void)rt_hw_interrupt_disable();
     rt_hw_board_init();
@@ -99,7 +99,7 @@ int main(void)
         demo_halt("RT-Thread Tick init failed\n");
     }
 
-    (void)board_early_puts("RT-Thread demo scheduler start\n");
+    rt_kputs("RT-Thread demo scheduler start\n");
     rt_system_scheduler_start();
 
     demo_halt("RT-Thread scheduler returned\n");

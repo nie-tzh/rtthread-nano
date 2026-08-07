@@ -38,7 +38,7 @@ void rt_hw_interrupt_dispatch(int vector)
 
 static void t22_rt_interrupt_halt(const char *reason)
 {
-    (void)board_early_puts(reason);
+    rt_hw_console_output(reason);
     (void)rt_hw_interrupt_disable();
 
     for (;;)
