@@ -9,7 +9,8 @@ OBJECTS := $(OBJECTS:.s=.o)
 DEPS    := $(OBJECTS:.o=.d)
 BUILD_CONFIG := $(BUILD_DIR)/.build-config
 BUILD_INPUTS := Makefile mk/toolchain.mk mk/rules.mk \
-                $(BOARD_MK) $(SOC_MK) $(CPU_MK) $(APP_MK) $(DRIVER_MKS) \
+                $(BOARD_MK) $(SOC_MK) $(CHIP_MK) $(CPU_MK) $(APP_MK) \
+                $(DRIVER_MKS) \
                 $(RTTHREAD_MK) $(RTTHREAD_CONFIG)
 
 ifeq ($(V),1)
