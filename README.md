@@ -55,6 +55,8 @@ build/t22-deserializer-evb/demo/debug/
 
 - [工程架构](docs/architecture.md)
 - [移植进度](docs/porting-progress.md)
+- [Pinctrl子系统设计、Linux实现与T22落地](docs/pinctrl-subsystem-design.md)
+- [Reset子系统设计与T22实施方案](docs/reset-subsystem-design.md)
 - [E902异常与CLIC中断架构](docs/e902-interrupt-architecture.md)
 - [E902异常与CLIC验证](docs/e902-interrupt-validation.md)
 - [E902 DW Timer周期中断验证](docs/e902-timer-validation.md)

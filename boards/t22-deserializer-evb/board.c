@@ -3,6 +3,7 @@
 
 #include "board.h"
 #include "board_pinctrl.h"
+#include "board_reset.h"
 #include "dw_apb_uart.h"
 #include "dw_uart_device.h"
 #include "e902.h"
@@ -31,7 +32,7 @@ static const struct dw_apb_uart_config board_uart_config =
 static void board_early_console_init(void)
 {
     (void)board_uart2_pinctrl_select_state(PINCTRL_STATE_DEFAULT);
-    t22_serdes_reset(T22_SERDES_RESET_UART2);
+    (void)board_uart2_reset();
 
     board_uart_ready =
         (dw_apb_uart_init(&board_uart.uart, &board_uart_config) ==
@@ -42,6 +43,7 @@ static void board_early_console_init(void)
 void board_early_init(void)
 {
     t22_serdes_system_init();
+    board_reset_init();
     board_pinctrl_init();
 #ifdef BSP_USING_EARLY_CONSOLE
     board_early_console_init();
@@ -59,7 +61,7 @@ static int board_uart_init(void)
     }
 
     (void)board_uart2_pinctrl_select_state(PINCTRL_STATE_DEFAULT);
-    t22_serdes_reset(T22_SERDES_RESET_UART2);
+    (void)board_uart2_reset();
 
     result = dw_uart_device_register(&board_uart,
                                      BOARD_CONSOLE_DEVICE,

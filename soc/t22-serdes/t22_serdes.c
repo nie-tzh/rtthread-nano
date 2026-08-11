@@ -12,9 +12,6 @@ struct t22_serdes_csrao_registers
 struct t22_serdes_csr_registers
 {
     volatile uint32_t pll;
-    uint32_t reserved0[8];
-    volatile uint32_t soft_reset;
-    uint32_t reserved1[43];
 };
 
 struct t22_serdes_misc_registers
@@ -26,9 +23,6 @@ struct t22_serdes_misc_registers
 _Static_assert(offsetof(struct t22_serdes_csrao_registers,
                         write_control) == CSRAO_WRITE_CONTROL_OFFSET,
                "T22 CSRAO write-control offset mismatch");
-_Static_assert(offsetof(struct t22_serdes_csr_registers, soft_reset) ==
-               CSR_SOFT_RESET_OFFSET,
-               "T22 CSR soft-reset offset mismatch");
 _Static_assert(offsetof(struct t22_serdes_misc_registers, pll_config19) ==
                MISC_PLL_CONFIG19_OFFSET,
                "T22 MISC PLL-config19 offset mismatch");
@@ -67,12 +61,4 @@ static void t22_serdes_clock_init(void)
 void t22_serdes_system_init(void)
 {
     t22_serdes_clock_init();
-}
-
-void t22_serdes_reset(enum t22_serdes_reset_id id)
-{
-    uint32_t mask = 1U << (uint32_t)id;
-
-    t22_serdes_csr_update32(&T22_SERDES_CSR->soft_reset, mask, 0U);
-    t22_serdes_csr_update32(&T22_SERDES_CSR->soft_reset, mask, mask);
 }

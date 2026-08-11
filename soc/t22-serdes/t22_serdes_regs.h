@@ -4,7 +4,6 @@
 #define CSRAO_WRITE_CONTROL_OFFSET       0x024U
 
 #define CSR_PLL_OFFSET                   0x000U
-#define CSR_SOFT_RESET_OFFSET            0x024U
 
 #define CSR_PLL_AHB_MASK                 (0x3U << 2)
 #define CSR_PLL_AHB_320MHZ               (0x3U << 2)
