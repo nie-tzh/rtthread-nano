@@ -31,7 +31,6 @@
 #define T22_SERDES_APB_CLOCK_HZ       200000000U
 #define T22_SERDES_SPI_CLOCK_HZ       200000000U
 
-void t22_serdes_system_init(void);
 void t22_serdes_csr_update32(volatile uint32_t *addr,
                              uint32_t mask,
                              uint32_t value);

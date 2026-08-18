@@ -4,9 +4,11 @@
 #include "board.h"
 #include "board_pinctrl.h"
 #include "board_reset.h"
+#include "clk.h"
 #include "dw_apb_uart.h"
 #include "dw_uart_device.h"
 #include "e902.h"
+#include "t22_clk.h"
 #include "t22_serdes.h"
 #include "t22_serdes_timer.h"
 
@@ -20,29 +22,34 @@ _Static_assert(BOARD_TICK_TIMER_CHANNEL_INDEX <
 
 static struct dw_uart_device board_uart;
 static int board_uart_ready;
-static const struct dw_apb_uart_config board_uart_config =
+
+static void board_uart_config_init(struct dw_apb_uart_config *config)
 {
-    .base = T22_SERDES_UART2_BASE,
-    .clock_hz = T22_SERDES_APB_CLOCK_HZ,
-    .baud_rate = BOARD_UART_BAUD_RATE,
-    .poll_limit = BOARD_UART_POLL_LIMIT
-};
+    config->base = T22_SERDES_UART2_BASE;
+    config->clock_hz =
+        (uint32_t)clk_get_rate(t22_clk_get(T22_CLK_APB));
+    config->baud_rate = BOARD_UART_BAUD_RATE;
+    config->poll_limit = BOARD_UART_POLL_LIMIT;
+}
 
 #ifdef BSP_USING_EARLY_CONSOLE
 static void board_early_console_init(void)
 {
+    struct dw_apb_uart_config config;
+
     (void)board_uart2_pinctrl_select_state(PINCTRL_STATE_DEFAULT);
     (void)board_uart2_reset();
 
+    board_uart_config_init(&config);
     board_uart_ready =
-        (dw_apb_uart_init(&board_uart.uart, &board_uart_config) ==
+        (dw_apb_uart_init(&board_uart.uart, &config) ==
          DW_APB_UART_OK);
 }
 #endif
 
 void board_early_init(void)
 {
-    t22_serdes_system_init();
+    t22_clk_init();
     board_reset_init();
     board_pinctrl_init();
 #ifdef BSP_USING_EARLY_CONSOLE
@@ -52,6 +59,7 @@ void board_early_init(void)
 
 static int board_uart_init(void)
 {
+    struct dw_apb_uart_config config;
     rt_err_t result;
 
     if ((board_uart_ready != 0) &&
@@ -63,9 +71,10 @@ static int board_uart_init(void)
     (void)board_uart2_pinctrl_select_state(PINCTRL_STATE_DEFAULT);
     (void)board_uart2_reset();
 
+    board_uart_config_init(&config);
     result = dw_uart_device_register(&board_uart,
                                      BOARD_CONSOLE_DEVICE,
-                                     &board_uart_config);
+                                     &config);
     if (result != RT_EOK)
     {
         return result;

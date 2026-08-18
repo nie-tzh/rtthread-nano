@@ -7,5 +7,6 @@ SRCS += $(BOARD_DIR)/board.c \
 INCLUDES += $(BOARD_DIR)/include
 
 DRIVER_MKS += drivers/serial/dw_apb_uart/driver.mk
+DRIVER_MKS += drivers/clk/driver.mk
 DRIVER_MKS += drivers/pinctrl/driver.mk
 DRIVER_MKS += drivers/reset/driver.mk

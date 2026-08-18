@@ -2,7 +2,9 @@
 #include <stdint.h>
 #include <rthw.h>
 
+#include "clk.h"
 #include "dw_apb_timer.h"
+#include "t22_clk.h"
 #include "t22_serdes.h"
 #include "t22_serdes_irq.h"
 #include "t22_serdes_timer.h"
@@ -147,6 +149,7 @@ int t22_serdes_timer_config_periodic(
     t22_serdes_timer_handler_t handler,
     void *parameter)
 {
+    unsigned long clock_rate;
     uint32_t load_count;
     rt_base_t previous_mstatus;
     int result;
@@ -160,12 +163,14 @@ int t22_serdes_timer_config_periodic(
     {
         return T22_SERDES_TIMER_ERROR_STATE;
     }
-    if ((T22_SERDES_APB_CLOCK_HZ % frequency_hz) != 0U)
+
+    clock_rate = clk_get_rate(t22_clk_get(T22_CLK_APB));
+    if ((clock_rate % frequency_hz) != 0UL)
     {
         return T22_SERDES_TIMER_ERROR_FREQUENCY;
     }
 
-    load_count = T22_SERDES_APB_CLOCK_HZ / frequency_hz;
+    load_count = (uint32_t)(clock_rate / frequency_hz);
     if (load_count == 0U)
     {
         return T22_SERDES_TIMER_ERROR_FREQUENCY;

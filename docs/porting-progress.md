@@ -254,7 +254,7 @@ volatile uint32_t g_runtime_marker;
 ```text
 startup.S
     -> board_early_init()
-        -> t22_serdes_system_init()
+        -> t22_clk_init()
         -> UART2 TX引脚配置
         -> UART2复位
         -> DW APB UART初始化

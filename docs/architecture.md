@@ -33,6 +33,7 @@ apps/                              产品应用和示例
 boards/<board>/                    板载连接、资源选择和可选启动覆盖
 drivers/                           可复用控制器驱动及RT-Thread设备适配
 drivers/interrupt/riscv_clic/      通用RISC-V CLIC寄存器驱动
+drivers/clk/                       Clock Core、通用时钟类型和芯片Provider
 drivers/pinctrl/                   Pinctrl Core和芯片Controller驱动
 drivers/reset/                     Reset Core和芯片Controller驱动
 mk/                                工具链和通用构建规则
@@ -76,6 +77,7 @@ drivers -> hardware
 | CPU架构机制 | `libcpu` | RISC-V CSR、异常入口、`mtvt/mcause`适配、上下文切换 |
 | 芯片系统集成 | `soc` | 地址空间、中断号、时钟、复位、T22 MMIO CSR写保护 |
 | 控制器操作方法 | `drivers` | RISC-V CLIC、DW UART、DW I2C、DW APB Timer寄存器流程 |
+| 时钟控制与Consumer接口 | `drivers/clk` + `soc` | `struct clk`、固定频率Provider、T22 PLL配置和时钟拓扑 |
 | 芯片引脚控制能力 | `drivers/pinctrl` + `soc` | MFP编码、MISC偏移、ECO规则、引脚数量 |
 | 外设复位控制语义 | `drivers/reset` + `soc` | Consumer复位接口、复位ID、复位寄存器资源 |
 | 板卡资源选择 | `boards` | UART2作为控制台、TIMER1作为系统Tick时基 |

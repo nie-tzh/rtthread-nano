@@ -344,7 +344,7 @@ int board_uart2_reset(void)
 /* board.c */
 void board_early_init(void)
 {
-    t22_serdes_system_init();
+    t22_clk_init();
     board_reset_init();
     board_pinctrl_init();
 }
@@ -480,7 +480,7 @@ board_uart2_reset();
 
 ```text
 board_early_init
-    -> t22_serdes_system_init
+    -> t22_clk_init
     -> board_reset_init
         -> t22_reset_init
     -> board_pinctrl_init
