@@ -5,10 +5,16 @@
 #define RT_TICK_PER_SECOND      1000
 #define RT_ALIGN_SIZE           4
 #define RT_NAME_MAX             8
+#define RT_USING_COMPONENTS_INIT
+#define RT_USING_SEMAPHORE
 #define RT_USING_DEVICE
 #define RT_USING_DEVICE_OPS
 #define RT_USING_CONSOLE
 #define RT_CONSOLEBUF_SIZE      128
+#define RT_USING_FINSH
+#define FINSH_USING_SYMTAB
+#define FINSH_USING_DESCRIPTION
+#define FINSH_USING_HISTORY
 #define BSP_USING_EARLY_CONSOLE
 /* IRQ frames and ISR call chains use the interrupted thread's stack. */
 #define IDLE_THREAD_STACK_SIZE  512

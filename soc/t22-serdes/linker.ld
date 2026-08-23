@@ -30,6 +30,32 @@ SECTIONS
         . = ALIGN(4);
     } > ROM
 
+    .rti_fn :
+    {
+        . = ALIGN(4);
+        __rt_init_rti_start = .;
+        KEEP(*(SORT(.rti_fn.0*)))
+        __rt_init_rti_board_start = .;
+        KEEP(*(SORT(.rti_fn.1*)))
+        __rt_init_rti_board_end = .;
+        KEEP(*(SORT(.rti_fn.2*)))
+        KEEP(*(SORT(.rti_fn.3*)))
+        KEEP(*(SORT(.rti_fn.4*)))
+        KEEP(*(SORT(.rti_fn.5*)))
+        KEEP(*(SORT(.rti_fn.6*)))
+        __rt_init_rti_end = .;
+        . = ALIGN(4);
+    } > ROM
+
+    .FSymTab :
+    {
+        . = ALIGN(4);
+        __fsymtab_start = .;
+        KEEP(*(FSymTab))
+        __fsymtab_end = .;
+        . = ALIGN(4);
+    } > ROM
+
     .rodata :
     {
         . = ALIGN(4);

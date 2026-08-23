@@ -24,10 +24,12 @@ struct dw_apb_uart_config
     uint32_t poll_limit;
 };
 
-int dw_apb_uart_init(struct dw_apb_uart *uart,
-                     const struct dw_apb_uart_config *config);
+int dw_uart_hw_init(struct dw_apb_uart *uart,
+                    const struct dw_apb_uart_config *config);
 int dw_apb_uart_wait_tx_idle(struct dw_apb_uart *uart);
 int dw_apb_uart_putc(struct dw_apb_uart *uart, char ch);
 int dw_apb_uart_getc(struct dw_apb_uart *uart);
+void dw_apb_uart_set_rx_interrupt(struct dw_apb_uart *uart,
+                                  uint32_t enabled);
 
 #endif

@@ -35,7 +35,6 @@ static void demo_thread_5ms_entry(void *parameter)
 
     for (;;)
     {
-        rt_kputs("demo: task5\n");
         (void)rt_thread_mdelay(5);
     }
 }
@@ -46,7 +45,6 @@ static void demo_thread_10ms_entry(void *parameter)
 
     for (;;)
     {
-        rt_kputs("demo: task10\n");
         (void)rt_thread_mdelay(10);
     }
 }
@@ -98,6 +96,10 @@ int main(void)
     {
         demo_halt("RT-Thread Tick init failed\n");
     }
+
+#ifdef RT_USING_COMPONENTS_INIT
+    rt_components_init();
+#endif
 
     rt_kputs("RT-Thread demo scheduler start\n");
     rt_system_scheduler_start();

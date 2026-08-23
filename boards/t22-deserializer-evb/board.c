@@ -10,6 +10,7 @@
 #include "e902.h"
 #include "t22_clk.h"
 #include "t22_serdes.h"
+#include "t22_serdes_irq.h"
 #include "t22_serdes_timer.h"
 
 #define BOARD_UART_BAUD_RATE     115200U
@@ -42,7 +43,7 @@ static void board_early_console_init(void)
 
     board_uart_config_init(&config);
     board_uart_ready =
-        (dw_apb_uart_init(&board_uart.uart, &config) ==
+        (dw_uart_hw_init(&board_uart.uart, &config) ==
          DW_APB_UART_OK);
 }
 #endif
@@ -74,7 +75,8 @@ static int board_uart_init(void)
     board_uart_config_init(&config);
     result = dw_uart_device_register(&board_uart,
                                      BOARD_CONSOLE_DEVICE,
-                                     &config);
+                                     &config,
+                                     T22_SERDES_IRQ_UART2);
     if (result != RT_EOK)
     {
         return result;
@@ -112,6 +114,9 @@ void rt_hw_board_init(void)
 
     rt_hw_interrupt_init();
     t22_serdes_timer_init();
+#ifdef RT_USING_COMPONENTS_INIT
+    rt_components_board_init();
+#endif
 }
 
 int rt_hw_tick_init(void)

@@ -12,6 +12,7 @@
 #define UART_LSR_DATA_READY      (1U << 0)
 #define UART_LSR_THRE            (1U << 5)
 #define UART_LSR_TEMT            (1U << 6)
+#define UART_IER_RX_AVAILABLE    (1U << 0)
 #define UART_USR_BUSY            (1U << 0)
 
 struct dw_apb_uart_registers
@@ -68,8 +69,8 @@ static int uart_wait_idle(
     return DW_APB_UART_OK;
 }
 
-int dw_apb_uart_init(struct dw_apb_uart *uart,
-                     const struct dw_apb_uart_config *config)
+int dw_uart_hw_init(struct dw_apb_uart *uart,
+                    const struct dw_apb_uart_config *config)
 {
     struct dw_apb_uart_registers *registers;
     uint32_t baud_clock;
@@ -191,4 +192,22 @@ int dw_apb_uart_getc(struct dw_apb_uart *uart)
     }
 
     return (int)(registers->data.receive_buffer & 0xFFU);
+}
+
+void dw_apb_uart_set_rx_interrupt(struct dw_apb_uart *uart,
+                                  uint32_t enabled)
+{
+    struct dw_apb_uart_registers *registers =
+        (struct dw_apb_uart_registers *)(uintptr_t)uart->base;
+    uint32_t value = registers->interrupt.interrupt_enable;
+
+    if (enabled != 0U)
+    {
+        value |= UART_IER_RX_AVAILABLE;
+    }
+    else
+    {
+        value &= ~UART_IER_RX_AVAILABLE;
+    }
+    registers->interrupt.interrupt_enable = value;
 }
